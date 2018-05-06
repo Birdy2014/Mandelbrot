@@ -16,6 +16,7 @@ function load() {
     canvas.height = (window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight).toString() - (divControls.offsetHeight + nav.clientHeight + 20);
     canvas.style.top = nav.clientHeight.toString() + "px";
     divControls.style.top = (nav.clientHeight + canvas.height) + "px";
+    var offsetY = nav.clientHeight;
 
     getValues();
 
@@ -23,18 +24,18 @@ function load() {
         if (!alreadyclicked) {
             alreadyclicked = true;
             punkt1[0] = event.x * f + xa;
-            punkt1[1] = (event.y - 25) * f + ya;
+            punkt1[1] = (event.y - offsetY) * f + ya;
             lastMousePosition[0] = event.x;
-            lastMousePosition[1] = (event.y - 25);
-            fillPixel(event.x, (event.y - 25), canvas, "#FF0000");
+            lastMousePosition[1] = (event.y - offsetY);
+            fillPixel(event.x, (event.y - offsetY), canvas, "#FF0000");
         } else {
             alreadyclicked = false;
             drawLine(lastMousePosition[0], lastMousePosition[1], event.x, lastMousePosition[1], canvas, "#FF0000");
-            drawLine(lastMousePosition[0], lastMousePosition[1], lastMousePosition[0], (event.y - 25), canvas, "#FF0000");
-            drawLine(lastMousePosition[0], (event.y - 25), event.x, (event.y - 25), canvas, "#FF0000");
-            drawLine(event.x, lastMousePosition[1], event.x, (event.y - 25), canvas, "#FF0000");
+            drawLine(lastMousePosition[0], lastMousePosition[1], lastMousePosition[0], (event.y - offsetY), canvas, "#FF0000");
+            drawLine(lastMousePosition[0], (event.y - offsetY), event.x, (event.y - offsetY), canvas, "#FF0000");
+            drawLine(event.x, lastMousePosition[1], event.x, (event.y - offsetY), canvas, "#FF0000");
             punkt2[0] = event.x * f + xa;
-            punkt2[1] = (event.y - 25) * f + ya;
+            punkt2[1] = (event.y - offsetY) * f + ya;
         }
     }, false);
 
@@ -82,8 +83,8 @@ function drawMandelbrot(canvas, x1, y1, x2, y2, iterationen, colors) {
             }
         }
     }
-    console.debug("FERTIG! x1: " + x1 + " y1: " + y1 + " x2: " + x2 + " y2: " + y2);
-    document.getElementById("labelProgress").innerHTML = "Fertig";
+    console.debug("DONE! x1: " + x1 + " y1: " + y1 + " x2: " + x2 + " y2: " + y2);
+    document.getElementById("labelProgress").innerHTML = "Done";
 }
 
 function fillPixel(x, y, canvas, color){
@@ -101,7 +102,7 @@ function drawLine(x1, y1, x2, y2, canvas, color) {
 }
 
 function start() {
-    document.getElementById("labelProgress").innerHTML = "Lade Mandelbrot...";
+    document.getElementById("labelProgress").innerHTML = "Loading Mandelbrot...";
     setTimeout(function() {
         drawMandelbrot(document.getElementById("canvasMandelbrot"), punkt1[0], punkt1[1], punkt2[0], punkt2[1], iterationen, colors);
     }, 100);
