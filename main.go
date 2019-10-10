@@ -20,7 +20,7 @@ func fractal(c complex128, maxIter int) int {
 	return i
 }
 
-func mandelbrot(width, height, maxIter int, x1, y1, x2, y2 float64, allowDistortion bool) []int {
+func mandelbrot(width, height, maxIter int, x1, y1, x2, y2 float64, allowDistortion bool, output chan<- []int) {
 	yratio = (y2 - y1) / float64(height)
 	if allowDistortion {
 		xratio = (x2 - x1) / float64(width)
@@ -32,7 +32,11 @@ func mandelbrot(width, height, maxIter int, x1, y1, x2, y2 float64, allowDistort
 		c := complex(x1+xratio*float64(i%width), y1+yratio*float64(i/width))
 		set[i] = fractal(c, maxIter)
 	}
-	return set
+	output <- set
+}
+
+func measureTime(name string, t time.Time) {
+	labelTime.SetText(name + time.Since(t).String())
 }
 
 func drawMandelbrot() {
@@ -40,10 +44,18 @@ func drawMandelbrot() {
 	if drawLine || (x1old == x1 && y1old == y1 && x2old == x2 && y2old == y2 && oldwidth == width && oldHeight == height && xratio == xratioold && yratio == yratioold) {
 		set = oldSet
 	} else {
-		start := time.Now()
-		set = mandelbrot(width, height, maxIter, x1, y1, x2, y2, allowDistortion)
-		elapsed := time.Since(start)
-		labelTime.SetText("Last mandelbrot took " + elapsed.String())
+		defer measureTime("Mandelbrot took ", time.Now())
+		channels := make([]chan []int, threadCount)
+		yoffset := y2 - y1
+		for i, _ := range channels {
+			channels[i] = make(chan []int)
+			go mandelbrot(width, height/threadCount, maxIter, x1, y1+float64(i)*(yoffset/float64(threadCount)), x2, y2-float64(threadCount-i-1)*(yoffset/float64(threadCount)), allowDistortion, channels[i])
+		}
+
+		for i, _ := range channels {
+			set = append(set, <-channels[i]...)
+		}
+
 		oldSet = set
 		x1old, y1old, x2old, y2old, xratioold, yratioold = x1, y1, x2, y2, xratio, yratio
 	}
@@ -135,7 +147,7 @@ var secondClick, drawLine bool
 var x1pix, y1pix, x2pix, y2pix int //clicked position in pixels on screen for drawing lines
 var oldSet []int
 var allowDistortion bool = false
-var maxIter int = 500
+var maxIter, threadCount int = 1500, 4
 var img *gtk.Image
 var labelTime *gtk.Label
 
