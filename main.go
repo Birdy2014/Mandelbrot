@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/gtk"
 	"image"
 	"image/color"
 	"image/jpeg"
+	"io/ioutil"
 	"math/cmplx"
 	"time"
 )
@@ -45,11 +47,11 @@ func drawMandelbrot() {
 		set = oldSet
 	} else {
 		defer measureTime("Mandelbrot took ", time.Now())
-		channels := make([]chan []int, threadCount)
+		channels := make([]chan []int, config.ThreadCount)
 		yoffset := y2 - y1
 		for i, _ := range channels {
 			channels[i] = make(chan []int)
-			go mandelbrot(width, height/threadCount, maxIter, x1, y1+float64(i)*(yoffset/float64(threadCount)), x2, y2-float64(threadCount-i-1)*(yoffset/float64(threadCount)), allowDistortion, channels[i])
+			go mandelbrot(width, height/config.ThreadCount, config.MaxIter, x1, y1+float64(i)*(yoffset/float64(config.ThreadCount)), x2, y2-float64(config.ThreadCount-i-1)*(yoffset/float64(config.ThreadCount)), config.AllowDistortion, channels[i])
 		}
 
 		for i, _ := range channels {
@@ -96,9 +98,9 @@ func drawMandelbrot() {
 			}
 		*/
 		col = color.RGBA{
-			R: 255 - uint8(float64(c)/float64(maxIter)*255),
-			G: 255 - uint8(float64(c)/float64(maxIter)*255),
-			B: 255 - uint8(float64(c)/float64(maxIter)*255),
+			R: 255 - uint8(float64(c)/float64(config.MaxIter)*255),
+			G: 255 - uint8(float64(c)/float64(config.MaxIter)*255),
+			B: 255 - uint8(float64(c)/float64(config.MaxIter)*255),
 			A: 0,
 		}
 
@@ -138,6 +140,33 @@ func rect(img *image.RGBA, x1, y1, x2, y2 int, col color.Color) {
 	}
 }
 
+type Configuration struct {
+	AllowDistortion bool
+	MaxIter int
+	ThreadCount int
+}
+
+func (c *Configuration) save(path string) {
+	data, _ := json.Marshal(c)
+	ioutil.WriteFile(path, data, 0644)
+}
+
+func readConfig(path string) *Configuration {
+	config := &Configuration{}
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		config = &Configuration{
+			AllowDistortion: false,
+			MaxIter:         1500,
+			ThreadCount:     2,
+		}
+		config.save(path)
+		return config
+	}
+	json.Unmarshal(data, config)
+	return config
+}
+
 var width, height int                             //Size of the drawingarea, updated when resized
 var x1, y1, x2, y2 float64 = -2, -1.25, 0.5, 1.25 //mandelbrot coordinates to render on next draw
 var x1old, y1old, x2old, y2old float64            //old coordinates and size so it doesn't have to re-render everything if nothing changes
@@ -146,10 +175,9 @@ var xratio, yratio, xratioold, yratioold, x1new, y1new float64 //ratio pixel - c
 var secondClick, drawLine bool
 var x1pix, y1pix, x2pix, y2pix int //clicked position in pixels on screen for drawing lines
 var oldSet []int
-var allowDistortion bool = false
-var maxIter, threadCount int = 1500, 4
 var img *gtk.Image
 var labelTime *gtk.Label
+var config *Configuration = readConfig("config.json")
 
 func main() {
 	gtk.Init(nil)
