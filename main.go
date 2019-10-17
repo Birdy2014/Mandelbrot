@@ -267,8 +267,8 @@ func main() {
 		secondClick = !secondClick
 		eventButton := gdk.EventButtonNewFromEvent(event)
 		if secondClick {
-			x1new = x1 + xratio*eventButton.X()
-			y1new = y1 + yratio*eventButton.Y()
+			x1new = x1old + xratio*eventButton.X()
+			y1new = y1old + yratio*eventButton.Y()
 
 			x1pix = int(eventButton.X())
 			y1pix = int(eventButton.Y())
@@ -276,8 +276,8 @@ func main() {
 			drawLine = true
 			drawMandelbrot()
 		} else {
-			x2 = x1 + xratio*eventButton.X()
-			y2 = y1 + yratio*eventButton.Y()
+			x2 = x1old + xratio*eventButton.X()
+			y2 = y1old + yratio*eventButton.Y()
 			x1 = x1new
 			y1 = y1new
 
