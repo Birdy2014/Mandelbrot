@@ -42,27 +42,7 @@ func measureTime(name string, t time.Time) {
 	labelTime.SetText(name + time.Since(t).String())
 }
 
-func drawMandelbrot() {
-	var set []int
-	if drawLine || (x1old == x1 && y1old == y1 && x2old == x2 && y2old == y2 && oldwidth == width && oldHeight == height && xratio == xratioold && yratio == yratioold) {
-		set = oldSet
-	} else {
-		defer measureTime("Mandelbrot took ", time.Now())
-		channels := make([]chan []int, config.ThreadCount)
-		yoffset := y2 - y1
-		for i, _ := range channels {
-			channels[i] = make(chan []int)
-			go mandelbrot(width, height/config.ThreadCount, config.MaxIter, x1, y1+float64(i)*(yoffset/float64(config.ThreadCount)), x2, y2-float64(config.ThreadCount-i-1)*(yoffset/float64(config.ThreadCount)), config.AllowDistortion, channels[i])
-		}
-
-		for i, _ := range channels {
-			set = append(set, <-channels[i]...)
-		}
-
-		oldSet = set
-		x1old, y1old, x2old, y2old, xratioold, yratioold = x1, y1, x2, y2, xratio, yratio
-	}
-
+func generateImage(set []int) *image.RGBA {
 	//TODO better colors
 	m := image.NewRGBA(image.Rect(0, 0, width, height))
 	var col color.RGBA
@@ -125,6 +105,34 @@ func drawMandelbrot() {
 		drawLine = false
 	}
 
+	return m
+}
+
+func drawMandelbrot() {
+	spinner.Start()
+	defer spinner.Stop()
+	var set []int
+	if drawLine || (x1old == x1 && y1old == y1 && x2old == x2 && y2old == y2 && oldwidth == width && oldHeight == height && xratio == xratioold && yratio == yratioold) {
+		set = oldSet
+	} else {
+		defer measureTime("Mandelbrot took ", time.Now())
+		channels := make([]chan []int, config.ThreadCount)
+		yoffset := y2 - y1
+		for i, _ := range channels {
+			channels[i] = make(chan []int)
+			go mandelbrot(width, height/config.ThreadCount, config.MaxIter, x1, y1+float64(i)*(yoffset/float64(config.ThreadCount)), x2, y2-float64(config.ThreadCount-i-1)*(yoffset/float64(config.ThreadCount)), config.AllowDistortion, channels[i])
+		}
+
+		for i, _ := range channels {
+			set = append(set, <-channels[i]...)
+		}
+
+		oldSet = set
+		x1old, y1old, x2old, y2old, xratioold, yratioold = x1, y1, x2, y2, xratio, yratio
+	}
+
+	m := generateImage(set)
+
 	buf := new(bytes.Buffer)
 	jpeg.Encode(buf, m, nil)
 	pixbufLoader, _ := gdk.PixbufLoaderNew()
@@ -184,6 +192,7 @@ var x1pix, y1pix, x2pix, y2pix int //clicked position in pixels on screen for dr
 var oldSet []int
 var img *gtk.Image
 var labelTime *gtk.Label
+var spinner *gtk.Spinner
 var config *Configuration = readConfig("config.json")
 
 func main() {
@@ -210,9 +219,12 @@ func main() {
 	eventBox, _ := gtk.EventBoxNew()
 	img, _ = gtk.ImageNew()
 
+	spinner, _ = gtk.SpinnerNew()
+	overlay, _ := gtk.OverlayNew()
+
 	//// Signals ////
 
-	buttonStart.Connect("clicked", drawMandelbrot)
+	buttonStart.Connect("clicked", func() { go drawMandelbrot() })
 
 	buttonReset.Connect("clicked", func() {
 		x1, y1, x2, y2 = -2, -1.25, 0.5, 1.25
@@ -255,7 +267,9 @@ func main() {
 
 	//// Add Widgets to Window ////
 
-	eventBox.Add(img)
+	overlay.Add(img)
+	overlay.AddOverlay(spinner)
+	eventBox.Add(overlay)
 	box.PackStart(eventBox, true, true, 0)
 	buttonbox.Add(buttonStart)
 	buttonbox.Add(buttonReset)
