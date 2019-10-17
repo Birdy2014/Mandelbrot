@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"io/ioutil"
+	"math"
 	"math/cmplx"
 	"time"
 )
@@ -66,8 +67,9 @@ func drawMandelbrot() {
 	m := image.NewRGBA(image.Rect(0, 0, width, height))
 	var col color.RGBA
 	for i, c := range set {
-		/*
-			if c == 300 {
+		switch config.ColorMode {
+		case 0:
+			if c == config.MaxIter {
 				col = color.RGBA{
 					R: 0,
 					G: 0,
@@ -96,12 +98,15 @@ func drawMandelbrot() {
 					A: 0,
 				}
 			}
-		*/
-		col = color.RGBA{
-			R: 255 - uint8(float64(c)/float64(config.MaxIter)*255),
-			G: 255 - uint8(float64(c)/float64(config.MaxIter)*255),
-			B: 255 - uint8(float64(c)/float64(config.MaxIter)*255),
-			A: 0,
+
+		case 1:
+			a := -math.Log(1.0/255) / float64(config.MaxIter)
+			col = color.RGBA{
+				R: uint8(255 * math.Exp(-a*float64(c))),
+				G: 255 - uint8(float64(c)/float64(config.MaxIter)*255),
+				B: 255 - uint8(float64(c)/float64(config.MaxIter)*255),
+				A: 0,
+			}
 		}
 
 		m.Set(i%width, i/width, col)
@@ -142,8 +147,9 @@ func rect(img *image.RGBA, x1, y1, x2, y2 int, col color.Color) {
 
 type Configuration struct {
 	AllowDistortion bool
-	MaxIter int
-	ThreadCount int
+	MaxIter         int
+	ThreadCount     int
+	ColorMode       int
 }
 
 func (c *Configuration) save(path string) {
@@ -159,6 +165,7 @@ func readConfig(path string) *Configuration {
 			AllowDistortion: false,
 			MaxIter:         1500,
 			ThreadCount:     2,
+			ColorMode:       0,
 		}
 		config.save(path)
 		return config
