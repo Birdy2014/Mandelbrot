@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"math"
 	"math/cmplx"
+	"os"
 	"time"
 )
 
@@ -40,6 +41,15 @@ func mandelbrot(width, height, maxIter int, x1, y1, x2, y2 float64, allowDistort
 
 func measureTime(name string, t time.Time) {
 	labelTime.SetText(name + time.Since(t).String())
+}
+
+func saveImage(i image.Image, path string) {
+	f, err := os.Create(path)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	jpeg.Encode(f, i, nil)
 }
 
 func generateImage(set []int) *image.RGBA {
@@ -115,7 +125,7 @@ func drawMandelbrot() {
 	if drawLine || (x1old == x1 && y1old == y1 && x2old == x2 && y2old == y2 && oldwidth == width && oldHeight == height && xratio == xratioold && yratio == yratioold) {
 		set = oldSet
 	} else {
-		defer measureTime("Mandelbrot took ", time.Now())
+		defer measureTime("Duration: ", time.Now())
 		channels := make([]chan []int, config.ThreadCount)
 		yoffset := y2 - y1
 		for i, _ := range channels {
@@ -214,7 +224,8 @@ func main() {
 
 	buttonStart, _ := gtk.ButtonNewWithLabel("Generate Mandelbrot")
 	buttonReset, _ := gtk.ButtonNewWithLabel("Reset")
-	labelTime, _ = gtk.LabelNew("")
+	buttonSave, _ := gtk.ButtonNewWithLabel("Save Image")
+	labelTime, _ = gtk.LabelNew("Duration: ")
 
 	eventBox, _ := gtk.EventBoxNew()
 	img, _ = gtk.ImageNew()
@@ -228,7 +239,20 @@ func main() {
 
 	buttonReset.Connect("clicked", func() {
 		x1, y1, x2, y2 = -2, -1.25, 0.5, 1.25
-		drawMandelbrot()
+		go drawMandelbrot()
+	})
+
+	buttonSave.Connect("clicked", func() {
+		dialog, _ := gtk.FileChooserNativeDialogNew("Save Image", win, gtk.FILE_CHOOSER_ACTION_SAVE, "Save", "Cancel")
+		home, _ := os.UserHomeDir()
+		dialog.SetCurrentFolder(home)
+		dialog.SetCurrentName("image.jpg")
+
+		res := dialog.Run()
+		if res == -3 {
+			path := dialog.GetFilename()
+			saveImage(generateImage(oldSet), path)
+		}
 	})
 
 	eventBox.Connect("size-allocate", func(eventBox *gtk.EventBox) {
@@ -273,11 +297,14 @@ func main() {
 	box.PackStart(eventBox, true, true, 0)
 	buttonbox.Add(buttonStart)
 	buttonbox.Add(buttonReset)
+	buttonbox.Add(buttonSave)
 	buttonbox.Add(labelTime)
 	box.Add(buttonbox)
 	win.Add(box)
 
 	win.ShowAll()
+
+	go drawMandelbrot() //Initial image
 
 	gtk.Main()
 }
