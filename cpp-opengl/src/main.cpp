@@ -24,6 +24,7 @@ in vec2 pos;
 
 uniform dvec2 center;
 uniform dvec2 scale;
+uniform int max_iterations;
 
 int mandelbrot(dvec2 c, int max_its) {
     dvec2 z = c;
@@ -36,7 +37,7 @@ int mandelbrot(dvec2 c, int max_its) {
 
 void main() {
     dvec2 mandelbrotPos = center + dvec2(pos) * scale;
-    int n = mandelbrot(mandelbrotPos, 1000);
+    int n = mandelbrot(mandelbrotPos, max_iterations);
     float a = 0.1;
     FragColor = vec4(0.5 * sin(a * float(n)) + 0.5, 0.5 * sin(a * float(n) + 2.094) + 0.5, 0.5 * sin(a * float(n) + 4.188) + 0.5, 255);
 }
@@ -47,6 +48,7 @@ GLuint vao, vbo_pos;
 GLuint shader;
 glm::dvec2 pos_middle = glm::dvec2(0);
 double pixel_per_mandelbrot = 0.003;
+int max_iterations = 500;
 
 int width = 1290;
 int height = 720;
@@ -111,16 +113,17 @@ void render_quad() {
     glBindVertexArray(0);
 }
 
-void update_mandelbrot_pos() {
+void update_mandelbrot_values() {
     glUniform2d(glGetUniformLocation(shader, "center"), pos_middle.x, pos_middle.y);
     glUniform2d(glGetUniformLocation(shader, "scale"), pixel_per_mandelbrot * (width / 2), pixel_per_mandelbrot * (height / 2));
+    glUniform1i(glGetUniformLocation(shader, "max_iterations"), max_iterations);
 }
 
 void framebuffer_size_callback(GLFWwindow*, int w, int h) {
     width = w;
     height = h;
     glViewport(0, 0, width, height);
-    update_mandelbrot_pos();
+    update_mandelbrot_values();
 }
 
 void scroll_callback(GLFWwindow*, double xoffset, double yoffset) {
@@ -128,7 +131,18 @@ void scroll_callback(GLFWwindow*, double xoffset, double yoffset) {
         pixel_per_mandelbrot /= 1.5;
     else
         pixel_per_mandelbrot *= 1.5;
-    update_mandelbrot_pos();
+    update_mandelbrot_values();
+}
+
+void key_callback(GLFWwindow*, int key, int, int action, int mods) {
+    if (action != GLFW_PRESS)
+        return;
+    if (key == GLFW_KEY_PAGE_UP || key == GLFW_KEY_UP)
+        max_iterations += 10;
+    if (key == GLFW_KEY_PAGE_DOWN || key == GLFW_KEY_DOWN)
+        max_iterations -= 10;
+    update_mandelbrot_values();
+    std::cout << "max_iterations: " << max_iterations << '\n';
 }
 
 glm::dvec2 cursor_pos() {
@@ -162,10 +176,11 @@ int main() {
     glViewport(0, 0, width, height);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetScrollCallback(window, scroll_callback);
+    glfwSetKeyCallback(window, key_callback);
 
     init_shader();
     init_quad();
-    update_mandelbrot_pos();
+    update_mandelbrot_values();
 
     glm::dvec2 last_cursor_pos = cursor_pos();
     glm::dvec2 cursor_pos_offset = glm::dvec2(0);
@@ -177,7 +192,7 @@ int main() {
         if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
             pos_middle.x -= cursor_pos_offset.x * pixel_per_mandelbrot;
             pos_middle.y += cursor_pos_offset.y * pixel_per_mandelbrot;
-            update_mandelbrot_pos();
+            update_mandelbrot_values();
         }
 
         render_quad();
