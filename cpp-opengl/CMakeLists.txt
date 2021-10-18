@@ -10,7 +10,7 @@ set(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} CACHE STRING "Debug")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -Wall -fdiagnostics-color=always -fsanitize=address")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 
-add_executable(Mandelbrot ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp)
+add_executable(Mandelbrot ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
 
 if(WIN32)
     target_link_libraries(Mandelbrot glfw opengl32 assimp freetype)
@@ -19,12 +19,11 @@ else()
 endif()
 
 target_sources(Mandelbrot PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/glad/src/glad.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/src/glad.c
 )
 
 target_include_directories(Mandelbrot PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/glad/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/stb_image
+    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/include
 )
 
 include(FetchContent)

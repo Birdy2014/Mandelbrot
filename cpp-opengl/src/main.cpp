@@ -3,8 +3,41 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/string_cast.hpp>
 #include <iostream>
-#include <fstream>
-#include <string>
+
+const char* vertexShaderSource = R"(
+#version 330 core
+layout (location = 0) in vec3 posIn;
+layout (location = 1) in vec2 mandelbrotIn;
+
+out vec2 mandelbrotPos;
+
+void main() {
+    gl_Position = vec4(posIn, 1.0);
+    mandelbrotPos = mandelbrotIn;
+}
+)";
+
+const char* fragmentShaderSource = R"(
+#version 330 core
+out vec4 FragColor;
+
+in vec2 mandelbrotPos;
+
+int mandelbrot(vec2 c, int max_its) {
+    vec2 z = c;
+    for (int i = 0; i < max_its; i++){
+        if (dot(z, z) > 4.) return i;
+        z = vec2(z.x * z.x - z.y * z.y, 2. * z.x * z.y) + c;
+    }
+    return max_its;
+}
+
+void main() {
+    int n = mandelbrot(mandelbrotPos, 100);
+    float a = 0.1;
+    FragColor = vec4(0.5 * sin(a * float(n)) + 0.5, 0.5 * sin(a * float(n) + 2.094) + 0.5, 0.5 * sin(a * float(n) + 4.188) + 0.5, 255);
+}
+)";
 
 GLFWwindow* window;
 GLuint vao, vbo;
@@ -15,29 +48,11 @@ double pixel_per_mandelbrot = 0.003;
 int width = 1290;
 int height = 720;
 
-std::string read_file(const std::string& path, bool convertEOL) {
-    std::ifstream file_stream;
-    std::string content;
-    try {
-        file_stream.open(path);
-        content.assign(std::istreambuf_iterator<char>(file_stream), std::istreambuf_iterator<char>());
-        if (convertEOL)
-            content.erase(std::remove(content.begin(), content.end(), '\r'), content.end());
-    } catch (std::ifstream::failure& e) {
-        std::cerr << "Failed to read file " << path << std::endl;
-    }
-    return content;
-}
-
 void init_shader() {
     int success;
     char info_log[1024];
-    std::string vertexShaderSource = read_file("mandelbrot.vert", true);
-    const char* vsSource = vertexShaderSource.c_str();
-    std::string fragmentShaderSource = read_file("mandelbrot.frag", true);
-    const char* fsSource = fragmentShaderSource.c_str();
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vsSource, NULL);
+    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
     glCompileShader(vertexShader);
     glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
     if (!success) {
@@ -46,7 +61,7 @@ void init_shader() {
         exit(1);
     }
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fsSource, NULL);
+    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
     glCompileShader(fragmentShader);
     glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
     if (!success) {
