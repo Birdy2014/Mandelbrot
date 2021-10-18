@@ -65,7 +65,7 @@ function drawMandelbrot(canvas, x1, y1, x2, y2, iterationen, colors) {
             xz = 0;
             yz = 0;
 
-            for (var zaehler = 1; zaehler <= iterationen && Math.sqrt(xz * xz + yz * yz) < 2; zaehler++) {
+            for (var zaehler = 1; zaehler <= iterationen && (xz * xz + yz * yz) < 4; zaehler++) {
                 xxz = xz * xz - yz * yz + xc;
                 yz = 2 * xz * yz + yc;
                 xz = xxz;
