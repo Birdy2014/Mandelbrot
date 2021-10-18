@@ -5,20 +5,20 @@
 #include <iostream>
 
 const char* vertexShaderSource = R"(
-#version 330 core
-layout (location = 0) in vec3 posIn;
+#version 440 core
+layout (location = 0) in vec2 posIn;
 layout (location = 1) in vec2 mandelbrotIn;
 
 out vec2 mandelbrotPos;
 
 void main() {
-    gl_Position = vec4(posIn, 1.0);
+    gl_Position = vec4(posIn, 0.0, 1.0);
     mandelbrotPos = mandelbrotIn;
 }
 )";
 
 const char* fragmentShaderSource = R"(
-#version 330 core
+#version 440 core
 out vec4 FragColor;
 
 in vec2 mandelbrotPos;
@@ -33,14 +33,14 @@ int mandelbrot(vec2 c, int max_its) {
 }
 
 void main() {
-    int n = mandelbrot(mandelbrotPos, 100);
+    int n = mandelbrot(mandelbrotPos, 2000);
     float a = 0.1;
     FragColor = vec4(0.5 * sin(a * float(n)) + 0.5, 0.5 * sin(a * float(n) + 2.094) + 0.5, 0.5 * sin(a * float(n) + 4.188) + 0.5, 255);
 }
 )";
 
 GLFWwindow* window;
-GLuint vao, vbo;
+GLuint vao, vbo_pos, vbo_mandelbrot;
 GLuint shader;
 glm::vec2 pos_middle = glm::vec2(0);
 double pixel_per_mandelbrot = 0.003;
@@ -86,33 +86,38 @@ void init_shader() {
 
 void init_quad() {
     float quad_vertices[] = {
-        // positions        // Mandelbrot Coords
-        -1.0f, 1.0f,  0.0f, 0.0f, 1.0f,
-        -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
-        1.0f,  1.0f,  0.0f, 1.0f, 1.0f,
-        1.0f,  -1.0f, 0.0f, 1.0f, 0.0f,
+        // positions
+        -1.0f, 1.0f,
+        -1.0f, -1.0f,
+        1.0f,  1.0f,
+        1.0f,  -1.0f,
     };
     // setup plane VAO
     glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
     glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glGenBuffers(1, &vbo_pos);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_pos);
     glBufferData(GL_ARRAY_BUFFER, sizeof(quad_vertices), &quad_vertices, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+
+
+    glGenBuffers(1, &vbo_mandelbrot);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_mandelbrot);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quad_vertices), &quad_vertices, GL_STATIC_DRAW);
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
 }
 
 void update_quad(glm::vec2 bottom_left, glm::vec2 top_right) {
     float quad_vertices[] = {
-        // positions        // Mandelbrot Coords
-        -1.0f, 1.0f,  0.0f, bottom_left.x, top_right.y,
-        -1.0f, -1.0f, 0.0f, bottom_left.x, bottom_left.y,
-        1.0f,  1.0f,  0.0f, top_right.x,   top_right.y,
-        1.0f,  -1.0f, 0.0f, top_right.x,   bottom_left.y,
+        // Mandelbrot Coords
+        bottom_left.x, top_right.y,
+        bottom_left.x, bottom_left.y,
+        top_right.x,   top_right.y,
+        top_right.x,   bottom_left.y,
     };
-    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_mandelbrot);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(quad_vertices), &quad_vertices);
 }
 
@@ -142,9 +147,9 @@ void framebuffer_size_callback(GLFWwindow*, int w, int h) {
 
 void scroll_callback(GLFWwindow*, double xoffset, double yoffset) {
     if (yoffset > 0)
-        pixel_per_mandelbrot /= 2;
+        pixel_per_mandelbrot /= 1.5;
     else
-        pixel_per_mandelbrot *= 2;
+        pixel_per_mandelbrot *= 1.5;
     update_mandelbrot_pos();
 }
 
@@ -156,8 +161,8 @@ glm::vec2 cursor_pos() {
 
 int main() {
     glfwInit();
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 4);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // Create Window
