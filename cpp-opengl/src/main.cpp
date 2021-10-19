@@ -49,6 +49,7 @@ GLuint shader;
 glm::dvec2 pos_middle = glm::dvec2(0);
 double pixel_per_mandelbrot = 0.003;
 int max_iterations = 500;
+bool redraw = true;
 
 int width = 1290;
 int height = 720;
@@ -113,17 +114,18 @@ void render_quad() {
     glBindVertexArray(0);
 }
 
-void update_mandelbrot_values() {
+void update_mandelbrot() {
     glUniform2d(glGetUniformLocation(shader, "center"), pos_middle.x, pos_middle.y);
     glUniform2d(glGetUniformLocation(shader, "scale"), pixel_per_mandelbrot * (width / 2), pixel_per_mandelbrot * (height / 2));
     glUniform1i(glGetUniformLocation(shader, "max_iterations"), max_iterations);
+    render_quad();
 }
 
 void framebuffer_size_callback(GLFWwindow*, int w, int h) {
     width = w;
     height = h;
     glViewport(0, 0, width, height);
-    update_mandelbrot_values();
+    redraw = true;
 }
 
 void scroll_callback(GLFWwindow*, double xoffset, double yoffset) {
@@ -131,7 +133,7 @@ void scroll_callback(GLFWwindow*, double xoffset, double yoffset) {
         pixel_per_mandelbrot /= 1.5;
     else
         pixel_per_mandelbrot *= 1.5;
-    update_mandelbrot_values();
+    redraw = true;
 }
 
 void key_callback(GLFWwindow*, int key, int, int action, int mods) {
@@ -141,7 +143,7 @@ void key_callback(GLFWwindow*, int key, int, int action, int mods) {
         max_iterations += 10;
     if (key == GLFW_KEY_PAGE_DOWN || key == GLFW_KEY_DOWN)
         max_iterations -= 10;
-    update_mandelbrot_values();
+    redraw = true;
     std::cout << "max_iterations: " << max_iterations << '\n';
 }
 
@@ -180,7 +182,6 @@ int main() {
 
     init_shader();
     init_quad();
-    update_mandelbrot_values();
 
     glm::dvec2 last_cursor_pos = cursor_pos();
     glm::dvec2 cursor_pos_offset = glm::dvec2(0);
@@ -192,10 +193,13 @@ int main() {
         if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
             pos_middle.x -= cursor_pos_offset.x * pixel_per_mandelbrot;
             pos_middle.y += cursor_pos_offset.y * pixel_per_mandelbrot;
-            update_mandelbrot_values();
+            redraw = true;
         }
 
-        render_quad();
+        if (redraw) {
+            redraw = false;
+            update_mandelbrot();
+        }
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
