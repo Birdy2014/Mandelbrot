@@ -144,7 +144,23 @@ void key_callback(GLFWwindow*, int key, int, int action, int mods) {
     if (key == GLFW_KEY_PAGE_DOWN || key == GLFW_KEY_DOWN)
         max_iterations -= 10;
     redraw = true;
-    std::cout << "max_iterations: " << max_iterations << '\n';
+}
+
+void print_usage() {
+#if defined(__linux__)
+    std::cout << "\033c";
+#elif defined(_WIN32)
+    system("cls");
+#else
+#error "Unknown platform"
+#endif
+
+std::cout << "OpenGL Mandelbrot Usage:\n";
+std::cout << "Zoom: mouse scroll\n";
+std::cout << "Move: drag while holding the left mouse button\n";
+std::cout << "change max iterations: Arrow up and down\n";
+std::cout << '\n';
+std::cout << "max iterations: " << max_iterations << '\n';
 }
 
 glm::dvec2 cursor_pos() {
@@ -198,6 +214,7 @@ int main() {
 
         if (redraw) {
             redraw = false;
+            print_usage();
             update_mandelbrot();
         }
         glfwSwapBuffers(window);
