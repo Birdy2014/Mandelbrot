@@ -122,6 +122,23 @@ void update_mandelbrot() {
     render_quad();
 }
 
+void print_usage() {
+#if defined(__linux__)
+    std::cout << "\033c";
+#elif defined(_WIN32)
+    system("cls");
+#else
+#error "Unknown platform"
+#endif
+
+    std::cout << "OpenGL Mandelbrot Usage:\n";
+    std::cout << "Zoom: mouse scroll\n";
+    std::cout << "Move: drag while holding the left mouse button\n";
+    std::cout << "change max iterations: Arrow up and down\n";
+    std::cout << '\n';
+    std::cout << "max iterations: " << max_iterations << '\n';
+}
+
 void framebuffer_size_callback(GLFWwindow*, int w, int h) {
     width = w;
     height = h;
@@ -144,24 +161,8 @@ void key_callback(GLFWwindow*, int key, int, int action, int mods) {
         max_iterations += 10;
     if (key == GLFW_KEY_PAGE_DOWN || key == GLFW_KEY_DOWN)
         max_iterations -= 10;
+    print_usage();
     redraw = true;
-}
-
-void print_usage() {
-#if defined(__linux__)
-    std::cout << "\033c";
-#elif defined(_WIN32)
-    system("cls");
-#else
-#error "Unknown platform"
-#endif
-
-std::cout << "OpenGL Mandelbrot Usage:\n";
-std::cout << "Zoom: mouse scroll\n";
-std::cout << "Move: drag while holding the left mouse button\n";
-std::cout << "change max iterations: Arrow up and down\n";
-std::cout << '\n';
-std::cout << "max iterations: " << max_iterations << '\n';
 }
 
 glm::dvec2 cursor_pos() {
@@ -199,6 +200,7 @@ int main() {
 
     init_shader();
     init_quad();
+    print_usage();
 
     glm::dvec2 last_cursor_pos = cursor_pos();
     glm::dvec2 cursor_pos_offset = glm::dvec2(0);
@@ -216,7 +218,6 @@ int main() {
         if (redraw) {
             redraw = false;
             redraw2 = true;
-            print_usage();
             update_mandelbrot();
         } else if (redraw2) {
             redraw2 = false;
