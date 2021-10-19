@@ -50,6 +50,7 @@ glm::dvec2 pos_middle = glm::dvec2(0);
 double pixel_per_mandelbrot = 0.003;
 int max_iterations = 500;
 bool redraw = true;
+bool redraw2 = false;
 
 int width = 1290;
 int height = 720;
@@ -214,7 +215,11 @@ int main() {
 
         if (redraw) {
             redraw = false;
+            redraw2 = true;
             print_usage();
+            update_mandelbrot();
+        } else if (redraw2) {
+            redraw2 = false;
             update_mandelbrot();
         }
         glfwSwapBuffers(window);

@@ -13,9 +13,9 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 add_executable(Mandelbrot ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
 
 if(WIN32)
-    target_link_libraries(Mandelbrot glfw opengl32 assimp freetype)
+    target_link_libraries(Mandelbrot glfw opengl32)
 else()
-    target_link_libraries(Mandelbrot glfw GL X11 pthread Xrandr Xi dl assimp freetype)
+    target_link_libraries(Mandelbrot glfw GL X11 pthread Xrandr Xi dl)
 endif()
 
 target_sources(Mandelbrot PRIVATE
