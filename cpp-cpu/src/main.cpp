@@ -1,4 +1,5 @@
 #include <MiniFB.h>
+#include <cmath>
 #include <cstring>
 #include <immintrin.h>
 #include <iostream>
@@ -289,11 +290,20 @@ private:
 
 void Buffer::blit(Chunk const& chunk, ScreenPosition position)
 {
-    auto line_width_bytes = std::min<int32_t>(chunk_size, m_width - position.x) * sizeof(int32_t);
-    for (int32_t y = 0; y < chunk_size; ++y) {
-        auto dest = m_buffer.data() + (position.y + y) * m_width + position.x;
-        auto src = chunk.buffer() + (y * chunk_size);
-        std::memcpy(dest, src, line_width_bytes);
+    auto const buffer_col_start = std::clamp(position.y, 0, m_height);
+    auto const buffer_col_end = std::clamp(position.y + chunk_size, 0, m_height);
+    auto const col_height = buffer_col_end - buffer_col_start;
+    auto const chunk_col_start = std::clamp(-position.y, 0, chunk_size);
+
+    auto const buffer_line_start = std::clamp(position.x, 0, m_width);
+    auto const buffer_line_end = std::clamp(position.x + chunk_size, 0, m_width);
+    auto const line_width = buffer_line_end - buffer_line_start;
+    auto const chunk_line_start = std::clamp(-position.x, 0, chunk_size);
+
+    for (int32_t y = 0; y < col_height; ++y) {
+        auto dest = &m_buffer.data()[(buffer_col_start + y) * m_width + buffer_line_start];
+        auto src = &chunk.buffer()[(chunk_col_start + y) * chunk_size + chunk_line_start];
+        std::memcpy(dest, src, line_width * sizeof(Color));
     }
 }
 
