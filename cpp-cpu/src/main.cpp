@@ -1,4 +1,5 @@
 #include <MiniFB.h>
+#include <cassert>
 #include <cmath>
 #include <cstring>
 #include <immintrin.h>
@@ -9,7 +10,7 @@
 #include <vector>
 
 // Parameters
-typedef float float_t;
+typedef float mandelbrot_float_t;
 static int32_t constexpr chunk_size = 64 * 8;
 static int32_t constexpr max_iterations = 100;
 static bool constexpr enable_avx2 = true;
@@ -20,8 +21,8 @@ struct ScreenPosition {
 };
 
 struct Complex {
-    float_t real;
-    float_t imag;
+    mandelbrot_float_t real;
+    mandelbrot_float_t imag;
 };
 
 struct ChunkGridPosition {
@@ -110,7 +111,7 @@ private:
 };
 
 struct Chunk {
-    static Chunk create(Complex position, float_t complex_size)
+    static Chunk create(Complex position, mandelbrot_float_t complex_size)
     {
         return Chunk{
             position,
@@ -153,10 +154,10 @@ struct Chunk {
 private:
     bool m_ready{false};
     Complex m_position;
-    float_t m_complex_size;
+    mandelbrot_float_t m_complex_size;
     std::array<Color, chunk_size * chunk_size> m_buffer;
 
-    Chunk(Complex position, float_t complex_size)
+    Chunk(Complex position, mandelbrot_float_t complex_size)
         : m_position{position}
         , m_complex_size{complex_size}
     { }
@@ -164,7 +165,7 @@ private:
     void compute_normal()
     {
         Complex c = m_position;
-        float_t pixel_delta = m_complex_size / chunk_size;
+        mandelbrot_float_t pixel_delta = m_complex_size / chunk_size;
 
         for (int32_t buffer_position = 0; buffer_position < static_cast<int32_t>(m_buffer.size()); ++buffer_position) {
             if (buffer_position > 0 && buffer_position % chunk_size == 0) {
@@ -192,9 +193,9 @@ private:
 
     void compute_avx2()
     {
-        static_assert(sizeof(float_t) == 4, "float_t is not 32 bits");
+        assert(sizeof(mandelbrot_float_t) == 4);
 
-        float_t pixel_delta_single = m_complex_size / chunk_size;
+        mandelbrot_float_t pixel_delta_single = m_complex_size / chunk_size;
 
         auto pixel_delta_imag = _mm256_set_ps(
             pixel_delta_single,
@@ -327,7 +328,7 @@ void Buffer::blit(Chunk const& chunk, ScreenPosition position)
     }
 }
 
-Complex screen_space_to_mandelbrot_space(ScreenPosition screen_position, float_t chunk_resolution)
+Complex screen_space_to_mandelbrot_space(ScreenPosition screen_position, mandelbrot_float_t chunk_resolution)
 {
     // chunk_resolution: width and height of a chunk in mandelbrot space
     // chunk_size: width and height of a chunk in screen space
@@ -338,7 +339,7 @@ Complex screen_space_to_mandelbrot_space(ScreenPosition screen_position, float_t
 }
 
 struct Mandelbrot {
-    void render(Buffer& buffer, ScreenPosition top_left_global, float_t chunk_resolution)
+    void render(Buffer& buffer, ScreenPosition top_left_global, mandelbrot_float_t chunk_resolution)
     {
         auto const top_left_mandelbrot_space = screen_space_to_mandelbrot_space(top_left_global, chunk_resolution);
 
@@ -380,9 +381,9 @@ struct Mandelbrot {
     }
 
 private:
-    std::map<float_t, std::unordered_map<ChunkGridPosition, Chunk>> m_chunks;
+    std::map<mandelbrot_float_t, std::unordered_map<ChunkGridPosition, Chunk>> m_chunks;
 
-    Chunk& get_or_create_chunk(float_t chunk_resolution, ChunkGridPosition position)
+    Chunk& get_or_create_chunk(mandelbrot_float_t chunk_resolution, ChunkGridPosition position)
     {
         auto& chunks_at_res = m_chunks[chunk_resolution];
         if (!chunks_at_res.contains(position)) {
