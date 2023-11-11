@@ -92,12 +92,12 @@ struct Buffer {
         return m_buffer;
     }
 
-    int32_t width() const
+    [[nodiscard]] int32_t width() const
     {
         return m_width;
     }
 
-    int32_t height() const
+    [[nodiscard]] int32_t height() const
     {
         return m_height;
     }
@@ -146,7 +146,7 @@ struct Chunk {
         m_ready = true;
     }
 
-    Color const* buffer() const
+    [[nodiscard]] Color const* buffer() const
     {
         return m_buffer.data();
     }
@@ -165,7 +165,7 @@ private:
     void compute_normal()
     {
         Complex c = m_position;
-        mandelbrot_float_t pixel_delta = m_complex_size / chunk_size;
+        mandelbrot_float_t const pixel_delta = m_complex_size / chunk_size;
 
         for (int32_t buffer_position = 0; buffer_position < static_cast<int32_t>(m_buffer.size()); ++buffer_position) {
             if (buffer_position > 0 && buffer_position % chunk_size == 0) {
@@ -195,9 +195,9 @@ private:
     {
         assert(sizeof(mandelbrot_float_t) == 4);
 
-        mandelbrot_float_t pixel_delta_single = m_complex_size / chunk_size;
+        mandelbrot_float_t const pixel_delta_single = m_complex_size / chunk_size;
 
-        auto pixel_delta_imag = _mm256_set_ps(
+        auto const pixel_delta_imag = _mm256_set_ps(
             pixel_delta_single,
             pixel_delta_single,
             pixel_delta_single,
@@ -207,7 +207,7 @@ private:
             pixel_delta_single,
             pixel_delta_single);
 
-        auto pixel_delta_real = _mm256_set_ps(
+        auto const pixel_delta_real = _mm256_set_ps(
             pixel_delta_single * 8,
             pixel_delta_single * 8,
             pixel_delta_single * 8,
@@ -314,7 +314,7 @@ void Buffer::blit(Chunk const& chunk, ScreenPosition position)
 
     auto const buffer_line_start = std::clamp(position.x, 0, m_width);
     auto const buffer_line_end = std::clamp(position.x + chunk_size, 0, m_width);
-    auto const line_width = buffer_line_end - buffer_line_start;
+    auto line_width = buffer_line_end - buffer_line_start;
     auto const chunk_line_start = std::clamp(-position.x, 0, chunk_size);
 
     if (col_height == 0 || line_width == 0) {
@@ -322,8 +322,8 @@ void Buffer::blit(Chunk const& chunk, ScreenPosition position)
     }
 
     for (int32_t y = 0; y < col_height; ++y) {
-        auto dest = &m_buffer.data()[(buffer_col_start + y) * m_width + buffer_line_start];
-        auto src = &chunk.buffer()[(chunk_col_start + y) * chunk_size + chunk_line_start];
+        auto* dest = &m_buffer.data()[(buffer_col_start + y) * m_width + buffer_line_start];
+        auto const* src = &chunk.buffer()[(chunk_col_start + y) * chunk_size + chunk_line_start];
         std::memcpy(dest, src, line_width * sizeof(Color));
     }
 }
@@ -387,7 +387,7 @@ private:
     {
         auto& chunks_at_res = m_chunks[chunk_resolution];
         if (!chunks_at_res.contains(position)) {
-            Complex complex_chunk_position{
+            auto const complex_chunk_position = Complex{
                 .real = position.real * chunk_resolution,
                 .imag = position.imag * chunk_resolution,
             };
