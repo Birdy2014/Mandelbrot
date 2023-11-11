@@ -3,6 +3,7 @@
 #include <cstring>
 #include <immintrin.h>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <span>
 #include <vector>
@@ -21,6 +22,21 @@ struct ScreenPosition {
 struct Complex {
     float_t real;
     float_t imag;
+};
+
+struct ChunkGridPosition {
+    int32_t real;
+    int32_t imag;
+
+    bool operator==(ChunkGridPosition const& other) const = default;
+};
+
+template <>
+struct std::hash<ChunkGridPosition> {
+    std::size_t operator()(ChunkGridPosition const& value) const
+    {
+        return (hash<int32_t>()(value.real) ^ hash<int32_t>()(value.imag));
+    }
 };
 
 struct Color {
@@ -300,12 +316,88 @@ void Buffer::blit(Chunk const& chunk, ScreenPosition position)
     auto const line_width = buffer_line_end - buffer_line_start;
     auto const chunk_line_start = std::clamp(-position.x, 0, chunk_size);
 
+    if (col_height == 0 || line_width == 0) {
+        return;
+    }
+
     for (int32_t y = 0; y < col_height; ++y) {
         auto dest = &m_buffer.data()[(buffer_col_start + y) * m_width + buffer_line_start];
         auto src = &chunk.buffer()[(chunk_col_start + y) * chunk_size + chunk_line_start];
         std::memcpy(dest, src, line_width * sizeof(Color));
     }
 }
+
+Complex screen_space_to_mandelbrot_space(ScreenPosition screen_position, float_t chunk_resolution)
+{
+    // chunk_resolution: width and height of a chunk in mandelbrot space
+    // chunk_size: width and height of a chunk in screen space
+    return Complex{
+        .real = (chunk_resolution / chunk_size) * screen_position.x,
+        .imag = (chunk_resolution / chunk_size) * screen_position.y,
+    };
+}
+
+struct Mandelbrot {
+    void render(Buffer& buffer, ScreenPosition top_left_global, float_t chunk_resolution)
+    {
+        auto const top_left_mandelbrot_space = screen_space_to_mandelbrot_space(top_left_global, chunk_resolution);
+
+        auto const chunk_x_count = static_cast<int32_t>(std::ceil(static_cast<double>(buffer.width()) / chunk_size)) + 1;
+        auto const chunk_y_count = static_cast<int32_t>(std::ceil(static_cast<double>(buffer.height()) / chunk_size)) + 1;
+
+        // Grid starts at 0+0i, with step width of chunk_resolution
+        auto const top_left_chunk_position = ChunkGridPosition{
+            static_cast<int32_t>(std::floor(top_left_mandelbrot_space.real / chunk_resolution)),
+            static_cast<int32_t>(std::floor(top_left_mandelbrot_space.imag / chunk_resolution)),
+        };
+
+        auto const top_left_chunk_global_screen_position = ScreenPosition{
+            .x = top_left_chunk_position.real * chunk_size,
+            .y = top_left_chunk_position.imag * chunk_size,
+        };
+
+        auto const top_left_local_screen_chunk_offset = ScreenPosition{
+            .x = top_left_chunk_global_screen_position.x - top_left_global.x,
+            .y = top_left_chunk_global_screen_position.y - top_left_global.y,
+        };
+
+        for (auto chunk_grid_x = 0; chunk_grid_x < chunk_x_count; ++chunk_grid_x) {
+            for (auto chunk_grid_y = 0; chunk_grid_y < chunk_y_count; ++chunk_grid_y) {
+                auto const chunk_grid_position = ChunkGridPosition{
+                    .real = top_left_chunk_position.real + chunk_grid_x,
+                    .imag = top_left_chunk_position.imag + chunk_grid_y,
+                };
+
+                auto const local_screen_chunk_offset = ScreenPosition{
+                    .x = top_left_local_screen_chunk_offset.x + chunk_grid_x * chunk_size,
+                    .y = top_left_local_screen_chunk_offset.y + chunk_grid_y * chunk_size,
+                };
+
+                auto& chunk = get_or_create_chunk(chunk_resolution, chunk_grid_position);
+                buffer.blit(chunk, local_screen_chunk_offset);
+            }
+        }
+    }
+
+private:
+    std::map<float_t, std::unordered_map<ChunkGridPosition, Chunk>> m_chunks;
+
+    Chunk& get_or_create_chunk(float_t chunk_resolution, ChunkGridPosition position)
+    {
+        auto& chunks_at_res = m_chunks[chunk_resolution];
+        if (!chunks_at_res.contains(position)) {
+            Complex complex_chunk_position{
+                .real = position.real * chunk_resolution,
+                .imag = position.imag * chunk_resolution,
+            };
+            chunks_at_res.insert(std::make_pair(position, Chunk::create(complex_chunk_position, chunk_resolution)));
+
+            // TODO: Enqueue chunk and compute it asynchronously
+            chunks_at_res.at(position).compute();
+        }
+        return chunks_at_res.at(position);
+    };
+};
 
 std::optional<Buffer> buffer = {};
 
@@ -320,17 +412,29 @@ int main()
     if (!window)
         return 0;
 
+    mfb_set_resize_callback(window, resize_callback);
+    int state;
+
     buffer = Buffer::init(800, 600);
 
-    // auto test_chunk = Chunk::create(Complex{-2, -1.25}, 2);
-    auto test_chunk = Chunk::create(Complex{-1, 0}, 0.5);
-    test_chunk.compute();
-    buffer->blit(test_chunk, ScreenPosition{0, 0});
+    auto mandelbrot = Mandelbrot{};
+
+    int x = -200;
+    bool move_left = false;
 
     do {
-        int state;
-
-        mfb_set_resize_callback(window, resize_callback);
+        mandelbrot.render(*buffer, ScreenPosition{x, -200}, 2);
+        if (move_left) {
+            --x;
+            if (x < -1000) {
+                move_left = false;
+            }
+        } else {
+            ++x;
+            if (x > 200) {
+                move_left = true;
+            }
+        }
 
         state = mfb_update_ex(window, buffer->buffer().data(), buffer->width(), buffer->height());
 
