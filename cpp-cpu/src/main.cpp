@@ -141,6 +141,7 @@ struct Chunk {
             compute_normal();
         }
 
+        // TODO: Implement proper colors
         for (int32_t buffer_position = 0; buffer_position < static_cast<int32_t>(m_buffer.size()); ++buffer_position) {
             auto iterations = m_buffer[buffer_position].color;
             if (iterations == max_iterations) {
@@ -165,6 +166,11 @@ struct Chunk {
     [[nodiscard]] bool is_ready() const
     {
         return m_ready;
+    }
+
+    [[nodiscard]] mandelbrot_float_t complex_size() const
+    {
+        return m_complex_size;
     }
 
 private:
@@ -344,6 +350,12 @@ void Buffer::blit(Chunk const& chunk, ScreenPosition position)
     }
 }
 
+struct OrderedChunk {
+    std::reference_wrapper<Chunk> chunk_reference;
+
+    bool operator<(OrderedChunk const& other) const;
+};
+
 Complex screen_space_to_mandelbrot_space(ScreenPosition screen_position, mandelbrot_float_t chunk_resolution)
 {
     // chunk_resolution: width and height of a chunk in mandelbrot space
@@ -415,7 +427,7 @@ struct Mandelbrot {
         return 2 * std::pow(0.9, zoom_level);
     }
 
-    // TODO: Prioritize chunks at current chunk_resolution
+    // TODO: Implement garbage collection
 
     void create_thread_pool()
     {
@@ -426,10 +438,10 @@ struct Mandelbrot {
                     m_queue_convar.wait(queue_lock, [&]() { return !m_chunk_queue.empty() || !m_threads_running; });
 
                     if (!m_chunk_queue.empty()) {
-                        auto chunk = m_chunk_queue.front();
+                        auto chunk = m_chunk_queue.top();
                         m_chunk_queue.pop();
                         queue_lock.unlock();
-                        chunk.get().compute();
+                        chunk.chunk_reference.get().compute();
                     }
                 }
             });
@@ -449,7 +461,7 @@ struct Mandelbrot {
 private:
     std::map<mandelbrot_float_t, std::unordered_map<ChunkGridPosition, Chunk>> m_chunks;
 
-    std::queue<std::reference_wrapper<Chunk>> m_chunk_queue;
+    std::priority_queue<OrderedChunk> m_chunk_queue;
     std::mutex m_queue_mutex;
     std::condition_variable m_queue_convar;
     std::vector<std::thread> m_threads;
@@ -468,7 +480,7 @@ private:
             auto& new_chunk = chunks_at_res.at(position);
             {
                 std::lock_guard<std::mutex> lock{m_queue_mutex};
-                m_chunk_queue.push(new_chunk);
+                m_chunk_queue.push(OrderedChunk{new_chunk});
             }
             m_queue_convar.notify_one();
         }
@@ -483,6 +495,12 @@ auto mandelbrot = Mandelbrot{};
 auto cursor_start_local_position = ScreenPosition{0, 0};
 auto cursor_start_global_position = ScreenPosition{0, 0};
 auto lmb_pressed = false;
+
+bool OrderedChunk::operator<(OrderedChunk const& other) const
+{
+    auto const current_chunk_resolution = mandelbrot.get_chunk_resolution();
+    return std::abs(chunk_reference.get().complex_size() - current_chunk_resolution) > std::abs(other.chunk_reference.get().complex_size() - current_chunk_resolution);
+}
 
 int main()
 {
