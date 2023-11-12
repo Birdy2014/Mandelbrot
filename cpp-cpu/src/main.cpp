@@ -102,6 +102,13 @@ struct Buffer {
         return m_height;
     }
 
+    void resize(int32_t width, int32_t height)
+    {
+        m_width = width;
+        m_height = height;
+        m_buffer.resize(width * height);
+    }
+
     void blit(Chunk const&, ScreenPosition);
 
 private:
@@ -402,18 +409,17 @@ private:
 
 std::optional<Buffer> buffer = {};
 
-void resize_callback([[maybe_unused]] mfb_window* window, [[maybe_unused]] int width, [[maybe_unused]] int height)
-{
-    // TODO: Implement resize callback
-}
-
 int main()
 {
     struct mfb_window* window = mfb_open_ex("Mandelbrot", 800, 600, WF_RESIZABLE);
     if (!window)
         return 0;
 
-    mfb_set_resize_callback(window, resize_callback);
+    mfb_set_resize_callback(window, [](mfb_window* window, int width, int height) {
+        mfb_set_viewport(window, 0, 0, width, height);
+        buffer->resize(width, height);
+    });
+
     int state;
 
     buffer = Buffer::init(800, 600);
