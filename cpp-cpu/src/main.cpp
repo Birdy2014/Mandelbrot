@@ -14,7 +14,7 @@
 
 // Parameters
 typedef float mandelbrot_float_t;
-static int32_t constexpr chunk_size = 64 * 8;
+static int32_t constexpr chunk_size = 32 * 8;
 static int32_t constexpr max_iterations = 100;
 static bool constexpr enable_avx2 = true;
 static int32_t constexpr thread_count = 8;
