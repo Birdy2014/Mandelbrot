@@ -345,9 +345,21 @@ Complex screen_space_to_mandelbrot_space(ScreenPosition screen_position, mandelb
     };
 }
 
+ScreenPosition mandelbrot_space_to_screen_space(Complex mandelbrot_position, mandelbrot_float_t chunk_resolution)
+{
+    return ScreenPosition{
+        .x = static_cast<int32_t>((chunk_size / chunk_resolution) * mandelbrot_position.real),
+        .y = static_cast<int32_t>((chunk_size / chunk_resolution) * mandelbrot_position.imag),
+    };
+}
+
 struct Mandelbrot {
-    void render(Buffer& buffer, ScreenPosition top_left_global, mandelbrot_float_t chunk_resolution)
+    ScreenPosition top_left_global = ScreenPosition{-100, -100};
+    int32_t zoom_level = 1;
+
+    void render(Buffer& buffer)
     {
+        auto const chunk_resolution = get_chunk_resolution();
         auto const top_left_mandelbrot_space = screen_space_to_mandelbrot_space(top_left_global, chunk_resolution);
 
         auto const chunk_x_count = static_cast<int32_t>(std::ceil(static_cast<double>(buffer.width()) / chunk_size)) + 1;
@@ -387,6 +399,11 @@ struct Mandelbrot {
         }
     }
 
+    mandelbrot_float_t get_chunk_resolution()
+    {
+        return 1.0 / (zoom_level * 0.5);
+    }
+
 private:
     std::map<mandelbrot_float_t, std::unordered_map<ChunkGridPosition, Chunk>> m_chunks;
 
@@ -409,8 +426,7 @@ private:
 
 std::optional<Buffer> buffer = {};
 
-auto current_position = ScreenPosition{-100, -100};
-auto chunk_resolution = mandelbrot_float_t{2};
+auto mandelbrot = Mandelbrot{};
 
 auto cursor_start_local_position = ScreenPosition{0, 0};
 auto cursor_start_global_position = ScreenPosition{0, 0};
@@ -435,7 +451,7 @@ int main()
         if (!lmb_pressed && is_pressed) {
             cursor_start_local_position.x = mfb_get_mouse_x(window);
             cursor_start_local_position.y = mfb_get_mouse_y(window);
-            cursor_start_global_position = current_position;
+            cursor_start_global_position = mandelbrot.top_left_global;
         }
 
         lmb_pressed = is_pressed;
@@ -451,24 +467,37 @@ int main()
             y - cursor_start_local_position.y,
         };
 
-        current_position.x = cursor_start_global_position.x - local_offset.x;
-        current_position.y = cursor_start_global_position.y - local_offset.y;
+        mandelbrot.top_left_global.x = cursor_start_global_position.x - local_offset.x;
+        mandelbrot.top_left_global.y = cursor_start_global_position.y - local_offset.y;
     });
 
-    mfb_set_mouse_scroll_callback(window, [](struct mfb_window*, mfb_key_mod, [[maybe_unused]] float delta_x, float delta_y) {
-        chunk_resolution += (-delta_y) * (chunk_resolution * 0.1);
-        std::cout << chunk_resolution << '\n';
-        // FIXME: Also move current_position
+    mfb_set_mouse_scroll_callback(window, [](struct mfb_window* window, mfb_key_mod, [[maybe_unused]] float delta_x, float delta_y) {
+        auto const cursor_position_local_screen_space = ScreenPosition{
+            .x = mfb_get_mouse_x(window),
+            .y = mfb_get_mouse_y(window),
+        };
+
+        auto const cursor_position_global_screen_space = ScreenPosition{
+            .x = mandelbrot.top_left_global.x + cursor_position_local_screen_space.x,
+            .y = mandelbrot.top_left_global.y + cursor_position_local_screen_space.y,
+        };
+
+        auto const cursor_position_mandelbrot_space = screen_space_to_mandelbrot_space(cursor_position_global_screen_space, mandelbrot.get_chunk_resolution());
+
+        mandelbrot.zoom_level = std::max<int32_t>(mandelbrot.zoom_level + delta_y, 1);
+
+        auto const new_cursor_position_global_screen_space = mandelbrot_space_to_screen_space(cursor_position_mandelbrot_space, mandelbrot.get_chunk_resolution());
+
+        mandelbrot.top_left_global.x = new_cursor_position_global_screen_space.x - cursor_position_local_screen_space.x;
+        mandelbrot.top_left_global.y = new_cursor_position_global_screen_space.y - cursor_position_local_screen_space.y;
     });
 
     int state;
 
     buffer = Buffer::init(800, 600);
 
-    auto mandelbrot = Mandelbrot{};
-
     do {
-        mandelbrot.render(*buffer, current_position, chunk_resolution);
+        mandelbrot.render(*buffer);
 
         state = mfb_update_ex(window, buffer->buffer().data(), buffer->width(), buffer->height());
 
