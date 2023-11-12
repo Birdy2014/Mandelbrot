@@ -409,6 +409,13 @@ private:
 
 std::optional<Buffer> buffer = {};
 
+auto current_position = ScreenPosition{-100, -100};
+auto chunk_resolution = mandelbrot_float_t{2};
+
+auto cursor_start_local_position = ScreenPosition{0, 0};
+auto cursor_start_global_position = ScreenPosition{0, 0};
+auto lmb_pressed = false;
+
 int main()
 {
     struct mfb_window* window = mfb_open_ex("Mandelbrot", 800, 600, WF_RESIZABLE);
@@ -420,28 +427,48 @@ int main()
         buffer->resize(width, height);
     });
 
+    mfb_set_mouse_button_callback(window, [](struct mfb_window* window, mfb_mouse_button button, mfb_key_mod, bool is_pressed) {
+        if (button != MOUSE_BTN_1) {
+            return;
+        }
+
+        if (!lmb_pressed && is_pressed) {
+            cursor_start_local_position.x = mfb_get_mouse_x(window);
+            cursor_start_local_position.y = mfb_get_mouse_y(window);
+            cursor_start_global_position = current_position;
+        }
+
+        lmb_pressed = is_pressed;
+    });
+
+    mfb_set_mouse_move_callback(window, [](struct mfb_window*, int x, int y) {
+        if (!lmb_pressed) {
+            return;
+        }
+
+        auto const local_offset = ScreenPosition{
+            x - cursor_start_local_position.x,
+            y - cursor_start_local_position.y,
+        };
+
+        current_position.x = cursor_start_global_position.x - local_offset.x;
+        current_position.y = cursor_start_global_position.y - local_offset.y;
+    });
+
+    mfb_set_mouse_scroll_callback(window, [](struct mfb_window*, mfb_key_mod, [[maybe_unused]] float delta_x, float delta_y) {
+        chunk_resolution += (-delta_y) * (chunk_resolution * 0.1);
+        std::cout << chunk_resolution << '\n';
+        // FIXME: Also move current_position
+    });
+
     int state;
 
     buffer = Buffer::init(800, 600);
 
     auto mandelbrot = Mandelbrot{};
 
-    int x = -200;
-    bool move_left = false;
-
     do {
-        mandelbrot.render(*buffer, ScreenPosition{x, -200}, 2);
-        if (move_left) {
-            --x;
-            if (x < -1000) {
-                move_left = false;
-            }
-        } else {
-            ++x;
-            if (x > 200) {
-                move_left = true;
-            }
-        }
+        mandelbrot.render(*buffer, current_position, chunk_resolution);
 
         state = mfb_update_ex(window, buffer->buffer().data(), buffer->width(), buffer->height());
 
