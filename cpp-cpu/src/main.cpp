@@ -412,8 +412,7 @@ struct Mandelbrot {
 
     mandelbrot_float_t get_chunk_resolution()
     {
-        // TODO: Adjust zoom speed
-        return 1.0 / (zoom_level * 0.5);
+        return 2 * std::pow(0.9, zoom_level);
     }
 
     // TODO: Prioritize chunks at current chunk_resolution
