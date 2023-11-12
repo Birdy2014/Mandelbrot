@@ -1,12 +1,15 @@
 #include <MiniFB.h>
 #include <cassert>
 #include <cmath>
+#include <condition_variable>
 #include <cstring>
 #include <immintrin.h>
 #include <iostream>
 #include <map>
 #include <optional>
+#include <queue>
 #include <span>
+#include <thread>
 #include <vector>
 
 // Parameters
@@ -14,6 +17,7 @@ typedef float mandelbrot_float_t;
 static int32_t constexpr chunk_size = 64 * 8;
 static int32_t constexpr max_iterations = 100;
 static bool constexpr enable_avx2 = true;
+static int32_t constexpr thread_count = 8;
 
 struct ScreenPosition {
     int32_t x;
@@ -156,6 +160,11 @@ struct Chunk {
     [[nodiscard]] Color const* buffer() const
     {
         return m_buffer.data();
+    }
+
+    [[nodiscard]] bool is_ready() const
+    {
+        return m_ready;
     }
 
 private:
@@ -394,18 +403,58 @@ struct Mandelbrot {
                 };
 
                 auto& chunk = get_or_create_chunk(chunk_resolution, chunk_grid_position);
-                buffer.blit(chunk, local_screen_chunk_offset);
+                if (chunk.is_ready()) {
+                    buffer.blit(chunk, local_screen_chunk_offset);
+                }
             }
         }
     }
 
     mandelbrot_float_t get_chunk_resolution()
     {
+        // TODO: Adjust zoom speed
         return 1.0 / (zoom_level * 0.5);
+    }
+
+    // TODO: Prioritize chunks at current chunk_resolution
+
+    void create_thread_pool()
+    {
+        for (int32_t i = 0; i < thread_count; ++i) {
+            m_threads.emplace_back([&]() {
+                while (m_threads_running) {
+                    std::unique_lock<std::mutex> queue_lock{m_queue_mutex};
+                    m_queue_convar.wait(queue_lock, [&]() { return !m_chunk_queue.empty() || !m_threads_running; });
+
+                    if (!m_chunk_queue.empty()) {
+                        auto chunk = m_chunk_queue.front();
+                        m_chunk_queue.pop();
+                        queue_lock.unlock();
+                        chunk.get().compute();
+                    }
+                }
+            });
+        }
+    }
+
+    void destroy_thread_pool()
+    {
+        m_threads_running = false;
+        m_queue_convar.notify_all();
+        for (auto& thread : m_threads) {
+            thread.join();
+        }
+        m_threads.clear();
     }
 
 private:
     std::map<mandelbrot_float_t, std::unordered_map<ChunkGridPosition, Chunk>> m_chunks;
+
+    std::queue<std::reference_wrapper<Chunk>> m_chunk_queue;
+    std::mutex m_queue_mutex;
+    std::condition_variable m_queue_convar;
+    std::vector<std::thread> m_threads;
+    bool m_threads_running{true};
 
     Chunk& get_or_create_chunk(mandelbrot_float_t chunk_resolution, ChunkGridPosition position)
     {
@@ -417,8 +466,12 @@ private:
             };
             chunks_at_res.insert(std::make_pair(position, Chunk::create(complex_chunk_position, chunk_resolution)));
 
-            // TODO: Enqueue chunk and compute it asynchronously
-            chunks_at_res.at(position).compute();
+            auto& new_chunk = chunks_at_res.at(position);
+            {
+                std::lock_guard<std::mutex> lock{m_queue_mutex};
+                m_chunk_queue.push(new_chunk);
+            }
+            m_queue_convar.notify_one();
         }
         return chunks_at_res.at(position);
     };
@@ -496,6 +549,8 @@ int main()
 
     buffer = Buffer::init(800, 600);
 
+    mandelbrot.create_thread_pool();
+
     do {
         mandelbrot.render(*buffer);
 
@@ -506,4 +561,6 @@ int main()
             break;
         }
     } while (mfb_wait_sync(window));
+
+    mandelbrot.destroy_thread_pool();
 }
