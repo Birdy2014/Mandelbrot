@@ -13,10 +13,10 @@
 #include <vector>
 
 // Parameters
-using mandelbrot_float_t = double; // float or double
+static bool constexpr use_double_precision = true;
 static int32_t constexpr chunk_size = 32 * 8;
 static int32_t constexpr max_iterations = 100;
-static bool constexpr enable_avx2 = true;
+static bool constexpr use_avx2 = true;
 static int32_t constexpr thread_count = 8;
 
 #define CONCAT(a, b) a##b
@@ -27,8 +27,8 @@ struct ScreenPosition {
 };
 
 struct Complex {
-    mandelbrot_float_t real;
-    mandelbrot_float_t imag;
+    double real;
+    double imag;
 };
 
 struct ChunkGridPosition {
@@ -124,7 +124,7 @@ private:
 };
 
 struct Chunk {
-    static Chunk create(Complex position, mandelbrot_float_t complex_size)
+    static Chunk create(Complex position, double complex_size)
     {
         return Chunk{
             position,
@@ -137,9 +137,9 @@ struct Chunk {
             return;
         }
 
-        if (enable_avx2 && sizeof(mandelbrot_float_t) == 4) {
+        if (use_avx2 && !use_double_precision) {
             compute_avx2_single();
-        } else if (enable_avx2 && sizeof(mandelbrot_float_t) == 8) {
+        } else if (use_avx2 && use_double_precision) {
             compute_avx2_double();
         } else {
             compute_normal();
@@ -172,7 +172,7 @@ struct Chunk {
         return m_ready;
     }
 
-    [[nodiscard]] mandelbrot_float_t complex_size() const
+    [[nodiscard]] double complex_size() const
     {
         return m_complex_size;
     }
@@ -180,10 +180,10 @@ struct Chunk {
 private:
     bool m_ready{false};
     Complex m_position;
-    mandelbrot_float_t m_complex_size;
+    double m_complex_size;
     std::array<Color, chunk_size * chunk_size> m_buffer;
 
-    Chunk(Complex position, mandelbrot_float_t complex_size)
+    Chunk(Complex position, double complex_size)
         : m_position{position}
         , m_complex_size{complex_size}
     { }
@@ -191,7 +191,7 @@ private:
     void compute_normal()
     {
         Complex c = m_position;
-        mandelbrot_float_t const pixel_delta = m_complex_size / chunk_size;
+        double const pixel_delta = m_complex_size / chunk_size;
 
         for (int32_t buffer_position = 0; buffer_position < static_cast<int32_t>(m_buffer.size()); ++buffer_position) {
             if (buffer_position > 0 && buffer_position % chunk_size == 0) {
@@ -219,9 +219,7 @@ private:
 
     void compute_avx2_single()
     {
-        assert(sizeof(mandelbrot_float_t) == 4);
-
-        mandelbrot_float_t const pixel_delta_single = m_complex_size / chunk_size;
+        auto const pixel_delta_single = m_complex_size / chunk_size;
 
         auto const pixel_delta_imag = _mm256_set_ps(
             pixel_delta_single,
@@ -330,9 +328,7 @@ private:
 
     void compute_avx2_double()
     {
-        assert(sizeof(mandelbrot_float_t) == 8);
-
-        mandelbrot_float_t const pixel_delta_single = m_complex_size / chunk_size;
+        auto const pixel_delta_single = m_complex_size / chunk_size;
 
         auto const pixel_delta_imag = _mm256_set_pd(
             pixel_delta_single,
@@ -449,7 +445,7 @@ struct OrderedChunk {
     bool operator<(OrderedChunk const& other) const;
 };
 
-Complex screen_space_to_mandelbrot_space(ScreenPosition screen_position, mandelbrot_float_t chunk_resolution)
+Complex screen_space_to_mandelbrot_space(ScreenPosition screen_position, double chunk_resolution)
 {
     // chunk_resolution: width and height of a chunk in mandelbrot space
     // chunk_size: width and height of a chunk in screen space
@@ -459,7 +455,7 @@ Complex screen_space_to_mandelbrot_space(ScreenPosition screen_position, mandelb
     };
 }
 
-ScreenPosition mandelbrot_space_to_screen_space(Complex mandelbrot_position, mandelbrot_float_t chunk_resolution)
+ScreenPosition mandelbrot_space_to_screen_space(Complex mandelbrot_position, double chunk_resolution)
 {
     return ScreenPosition{
         .x = static_cast<int32_t>((chunk_size / chunk_resolution) * mandelbrot_position.real),
@@ -515,7 +511,7 @@ struct Mandelbrot {
         }
     }
 
-    mandelbrot_float_t get_chunk_resolution()
+    double get_chunk_resolution()
     {
         return 2 * std::pow(0.9, zoom_level);
     }
@@ -552,7 +548,7 @@ struct Mandelbrot {
     }
 
 private:
-    std::map<mandelbrot_float_t, std::unordered_map<ChunkGridPosition, Chunk>> m_chunks;
+    std::map<double, std::unordered_map<ChunkGridPosition, Chunk>> m_chunks;
 
     std::priority_queue<OrderedChunk> m_chunk_queue;
     std::mutex m_queue_mutex;
@@ -560,7 +556,7 @@ private:
     std::vector<std::thread> m_threads;
     bool m_threads_running{true};
 
-    Chunk& get_or_create_chunk(mandelbrot_float_t chunk_resolution, ChunkGridPosition position)
+    Chunk& get_or_create_chunk(double chunk_resolution, ChunkGridPosition position)
     {
         auto& chunks_at_res = m_chunks[chunk_resolution];
         if (!chunks_at_res.contains(position)) {
@@ -605,6 +601,8 @@ int main()
         mfb_set_viewport(window, 0, 0, width, height);
         buffer->resize(width, height);
     });
+
+    // FIXME: Sometimes to view jumps while zooming or panning
 
     mfb_set_mouse_button_callback(window, [](struct mfb_window* window, mfb_mouse_button button, mfb_key_mod, bool is_pressed) {
         if (button != MOUSE_BTN_1) {
