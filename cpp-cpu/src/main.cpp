@@ -18,6 +18,9 @@ static int32_t constexpr chunk_size = 32 * 8;
 static int32_t constexpr max_iterations = 100;
 static bool constexpr use_avx2 = true;
 static int32_t constexpr thread_count = 8;
+static std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
+
+std::size_t frame_number = 0;
 
 #define CONCAT(a, b) a##b
 
@@ -177,11 +180,22 @@ struct Chunk {
         return m_complex_size;
     }
 
+    void update_last_access_time()
+    {
+        m_last_access_time = frame_number;
+    }
+
+    [[nodiscard]] std::size_t last_access_time() const
+    {
+        return m_last_access_time;
+    }
+
 private:
     bool m_ready{false};
     Complex m_position;
     double m_complex_size;
     std::array<Color, chunk_size * chunk_size> m_buffer;
+    std::size_t m_last_access_time{0};
 
     Chunk(Complex position, double complex_size)
         : m_position{position}
@@ -505,6 +519,7 @@ struct Mandelbrot {
 
                 auto& chunk = get_or_create_chunk(chunk_resolution, chunk_grid_position);
                 if (chunk.is_ready()) {
+                    chunk.update_last_access_time();
                     buffer.blit(chunk, local_screen_chunk_offset);
                 }
             }
@@ -515,8 +530,6 @@ struct Mandelbrot {
     {
         return 2 * std::pow(0.9, zoom_level);
     }
-
-    // TODO: Implement garbage collection
 
     void create_thread_pool()
     {
@@ -545,6 +558,47 @@ struct Mandelbrot {
             thread.join();
         }
         m_threads.clear();
+    }
+
+    struct ChunkCacheListItem {
+        Chunk const* chunk;
+        double resolution;
+        ChunkGridPosition position;
+    };
+
+    void invalidate_cache()
+    {
+        auto const single_chunk_memory = chunk_size * chunk_size * sizeof(Color);
+
+        std::size_t cache_memory = 0;
+        for (auto const& [resolution, chunks_at_res] : m_chunks) {
+            cache_memory += chunks_at_res.size() * single_chunk_memory;
+        }
+
+        if (cache_memory <= max_chunk_memory) {
+            return;
+        }
+
+        auto const memory_to_delete = cache_memory - max_chunk_memory;
+        auto const chunk_amount_to_delete = memory_to_delete / single_chunk_memory;
+
+        std::cout << "Removing " << chunk_amount_to_delete << " chunks\n";
+
+        std::vector<ChunkCacheListItem> chunks;
+        for (auto const& [resolution, chunks_at_res] : m_chunks) {
+            for (auto const& [position, chunk] : chunks_at_res) {
+                if (chunk.is_ready())
+                    chunks.push_back(ChunkCacheListItem{&chunk, resolution, position});
+            }
+        }
+        std::sort(std::begin(chunks), std::end(chunks), [](auto const& lhs, auto const& rhs) -> bool {
+            return lhs.chunk->last_access_time() < rhs.chunk->last_access_time();
+        });
+
+        for (std::size_t i = 0; i < chunk_amount_to_delete; ++i) {
+            auto to_delete = chunks.at(i);
+            m_chunks[to_delete.resolution].erase(to_delete.position);
+        }
     }
 
 private:
@@ -662,12 +716,16 @@ int main()
     do {
         mandelbrot.render(*buffer);
 
+        mandelbrot.invalidate_cache();
+
         state = mfb_update_ex(window, buffer->buffer().data(), buffer->width(), buffer->height());
 
         if (state < 0) {
             window = nullptr;
             break;
         }
+
+        ++frame_number;
     } while (mfb_wait_sync(window));
 
     mandelbrot.destroy_thread_pool();
