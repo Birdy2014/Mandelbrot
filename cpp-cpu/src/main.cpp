@@ -19,6 +19,7 @@ static int32_t constexpr max_iterations = 200;
 static bool constexpr use_avx2 = true;
 static int32_t constexpr thread_count = 8;
 static std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
+static std::size_t constexpr color_function = 1; // 0: black_white, 1: hsl
 
 std::size_t frame_number = 0;
 
@@ -66,6 +67,62 @@ struct Color {
         , r{r}
         , a{0}
     { }
+};
+
+struct HSLColor {
+    uint16_t hue; // 0-359
+    uint8_t saturation; // 0-100
+    uint8_t lightness; // 0-100
+
+    [[nodiscard]] Color to_rgb() const
+    {
+        if (saturation == 0) {
+            return Color{
+                lightness,
+                lightness,
+                lightness,
+            };
+        }
+
+        auto const h = std::clamp<uint16_t>(hue, 0, 359) / 100.0;
+        auto const s = std::clamp<uint8_t>(saturation, 0, 100) / 100.0;
+        auto const l = std::clamp<uint8_t>(lightness, 0, 100) / 100.0;
+
+        auto const chroma = (1 - std::abs(2 * l - 1)) * s;
+        auto const h1 = h / 60.0;
+        auto const x = chroma * (1.0 - std::abs(std::fmod(h1, 2.0) - 1));
+
+        auto const [r1, g1, b1] = ([&]() {
+            switch (static_cast<int32_t>(std::floor(h1))) {
+            case 0:
+                return std::make_tuple(chroma, x, 0.0);
+            case 1:
+                return std::make_tuple(x, chroma, 0.0);
+            case 2:
+                return std::make_tuple(0.0, chroma, x);
+            case 3:
+                return std::make_tuple(0.0, x, chroma);
+            case 4:
+                return std::make_tuple(x, 0.0, chroma);
+            case 5:
+                return std::make_tuple(chroma, 0.0, x);
+            default:
+                return std::make_tuple(0.0, 0.0, 0.0);
+            }
+        })();
+
+        auto const m = l - (chroma / 2.0);
+
+        auto const r = r1 + m;
+        auto const g = g1 + m;
+        auto const b = b1 + m;
+
+        return Color{
+            static_cast<uint8_t>(r * 255),
+            static_cast<uint8_t>(g * 255),
+            static_cast<uint8_t>(b * 255),
+        };
+    }
 };
 
 struct Chunk;
@@ -148,18 +205,13 @@ struct Chunk {
             compute_normal();
         }
 
-        // TODO: Implement proper colors
-        for (int32_t buffer_position = 0; buffer_position < static_cast<int32_t>(m_buffer.size()); ++buffer_position) {
-            auto iterations = m_buffer[buffer_position].color;
-            if (iterations == max_iterations) {
-                m_buffer[buffer_position] = Color{};
-            } else {
-                m_buffer[buffer_position] = Color{
-                    255,
-                    255,
-                    255,
-                };
-            }
+        switch (color_function) {
+        case 0:
+            colorize_black_white();
+            break;
+        case 1:
+            colorize_hsl();
+            break;
         }
 
         m_ready = true;
@@ -426,6 +478,40 @@ private:
             }
 
             c_real = _mm256_add_pd(c_real, pixel_delta_real);
+        }
+    }
+
+    void colorize_black_white()
+    {
+        for (int32_t buffer_position = 0; buffer_position < static_cast<int32_t>(m_buffer.size()); ++buffer_position) {
+            auto const iterations = m_buffer[buffer_position].color;
+            if (iterations == max_iterations) {
+                m_buffer[buffer_position] = Color{};
+            } else {
+                m_buffer[buffer_position] = Color{
+                    255,
+                    255,
+                    255,
+                };
+            }
+        }
+    }
+
+    void colorize_hsl()
+    {
+        for (int32_t buffer_position = 0; buffer_position < static_cast<int32_t>(m_buffer.size()); ++buffer_position) {
+            auto const iterations = m_buffer[buffer_position].color;
+            auto const iterations_ratio = static_cast<double>(iterations) / static_cast<double>(max_iterations);
+            if (iterations == max_iterations) {
+                m_buffer[buffer_position] = Color{};
+            } else {
+                m_buffer[buffer_position] = HSLColor{
+                    100,
+                    static_cast<uint8_t>(iterations_ratio * 100),
+                    std::clamp<uint8_t>(static_cast<uint8_t>(iterations_ratio * 100), 20, 80),
+                } /* wtf, clang-format? */
+                                                .to_rgb();
+            }
         }
     }
 };
