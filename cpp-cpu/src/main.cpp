@@ -18,6 +18,7 @@ static int32_t constexpr chunk_size = 32 * 8;
 static int32_t constexpr max_iterations = 200;
 static bool constexpr use_avx2 = true;
 static int32_t constexpr thread_count = 8;
+static int32_t constexpr max_queue_size = thread_count;
 static std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
 static std::size_t constexpr color_function = 1; // 0: black_white, 1: hsl
 
@@ -537,12 +538,6 @@ void Buffer::blit(Chunk const& chunk, ScreenPosition position)
     }
 }
 
-struct OrderedChunk {
-    std::reference_wrapper<Chunk> chunk_reference;
-
-    bool operator<(OrderedChunk const& other) const;
-};
-
 Complex screen_space_to_mandelbrot_space(ScreenPosition screen_position, double chunk_resolution)
 {
     // chunk_resolution: width and height of a chunk in mandelbrot space
@@ -601,10 +596,10 @@ struct Mandelbrot {
                     .y = top_left_local_screen_chunk_offset.y + chunk_grid_y * chunk_size,
                 };
 
-                auto& chunk = get_or_create_chunk(chunk_resolution, chunk_grid_position);
-                if (chunk.is_ready()) {
-                    chunk.update_last_access_time();
-                    buffer.blit(chunk, local_screen_chunk_offset);
+                auto* chunk = get_or_create_chunk(chunk_resolution, chunk_grid_position);
+                if (chunk && chunk->is_ready()) {
+                    chunk->update_last_access_time();
+                    buffer.blit(*chunk, local_screen_chunk_offset);
                 }
             }
         }
@@ -624,10 +619,10 @@ struct Mandelbrot {
                     m_queue_convar.wait(queue_lock, [&]() { return !m_chunk_queue.empty() || !m_threads_running; });
 
                     if (!m_chunk_queue.empty()) {
-                        auto chunk = m_chunk_queue.top();
+                        auto chunk = m_chunk_queue.front();
                         m_chunk_queue.pop();
                         queue_lock.unlock();
-                        chunk.chunk_reference.get().compute();
+                        chunk.get().compute();
                     }
                 }
             });
@@ -688,30 +683,34 @@ struct Mandelbrot {
 private:
     std::map<double, std::unordered_map<ChunkGridPosition, Chunk>> m_chunks;
 
-    std::priority_queue<OrderedChunk> m_chunk_queue;
+    std::queue<std::reference_wrapper<Chunk>> m_chunk_queue;
     std::mutex m_queue_mutex;
     std::condition_variable m_queue_convar;
     std::vector<std::thread> m_threads;
     bool m_threads_running{true};
 
-    Chunk& get_or_create_chunk(double chunk_resolution, ChunkGridPosition position)
+    Chunk* get_or_create_chunk(double chunk_resolution, ChunkGridPosition position)
     {
         auto& chunks_at_res = m_chunks[chunk_resolution];
         if (!chunks_at_res.contains(position)) {
-            auto const complex_chunk_position = Complex{
-                .real = position.real * chunk_resolution,
-                .imag = position.imag * chunk_resolution,
-            };
-            chunks_at_res.insert(std::make_pair(position, Chunk::create(complex_chunk_position, chunk_resolution)));
+            if (m_chunk_queue.size() <= max_queue_size) {
+                auto const complex_chunk_position = Complex{
+                    .real = position.real * chunk_resolution,
+                    .imag = position.imag * chunk_resolution,
+                };
+                chunks_at_res.insert(std::make_pair(position, Chunk::create(complex_chunk_position, chunk_resolution)));
 
-            auto& new_chunk = chunks_at_res.at(position);
-            {
-                std::lock_guard<std::mutex> lock{m_queue_mutex};
-                m_chunk_queue.push(OrderedChunk{new_chunk});
+                auto& new_chunk = chunks_at_res.at(position);
+                {
+                    std::lock_guard<std::mutex> lock{m_queue_mutex};
+                    m_chunk_queue.push(new_chunk);
+                }
+                m_queue_convar.notify_one();
             }
-            m_queue_convar.notify_one();
         }
-        return chunks_at_res.at(position);
+        if (chunks_at_res.contains(position))
+            return &chunks_at_res.at(position);
+        return nullptr;
     };
 };
 
@@ -722,12 +721,6 @@ auto mandelbrot = Mandelbrot{};
 auto cursor_start_local_position = ScreenPosition{0, 0};
 auto cursor_start_global_position = ScreenPosition{0, 0};
 auto lmb_pressed = false;
-
-bool OrderedChunk::operator<(OrderedChunk const& other) const
-{
-    auto const current_chunk_resolution = mandelbrot.get_chunk_resolution();
-    return std::abs(chunk_reference.get().complex_size() - current_chunk_resolution) > std::abs(other.chunk_reference.get().complex_size() - current_chunk_resolution);
-}
 
 int main()
 {
