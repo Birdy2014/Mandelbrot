@@ -15,7 +15,7 @@
 // Parameters
 static bool constexpr use_double_precision = true;
 static int32_t constexpr chunk_size = 32 * 8;
-static int32_t constexpr max_iterations = 200;
+static int32_t constexpr max_iterations = 1000;
 static bool constexpr use_avx2 = true;
 static int32_t constexpr thread_count = 8;
 static int32_t constexpr max_queue_size = thread_count;
