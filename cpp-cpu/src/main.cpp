@@ -351,8 +351,7 @@ private:
             auto z_tmp_real = const_0;
             auto z_tmp_imag = const_0;
 
-            int32_t iteration = 0;
-            for (; iteration < max_iterations; ++iteration) {
+            for (int32_t iteration = 0; iteration < max_iterations; ++iteration) {
                 auto abs = _mm256_add_ps(_mm256_mul_ps(z_real, z_real), _mm256_mul_ps(z_imag, z_imag));
                 auto comparison_mask = _mm256_cmp_ps(abs, const_4, _CMP_GE_OS);
                 if (!_mm256_testz_si256(comparison_mask, comparison_mask)) {
@@ -444,8 +443,7 @@ private:
             auto z_tmp_real = const_0;
             auto z_tmp_imag = const_0;
 
-            int32_t iteration = 0;
-            for (; iteration < max_iterations; ++iteration) {
+            for (int32_t iteration = 0; iteration < max_iterations; ++iteration) {
                 auto abs = _mm256_add_pd(_mm256_mul_pd(z_real, z_real), _mm256_mul_pd(z_imag, z_imag));
                 auto comparison_mask = _mm256_cmp_pd(abs, const_4, _CMP_GE_OS);
                 if (!_mm256_testz_si256(comparison_mask, comparison_mask)) {
@@ -483,7 +481,7 @@ private:
 
     void colorize_black_white()
     {
-        for (int32_t buffer_position = 0; buffer_position < static_cast<int32_t>(m_buffer.size()); ++buffer_position) {
+        for (uint32_t buffer_position = 0; buffer_position < m_buffer.size(); ++buffer_position) {
             auto const iterations = m_buffer[buffer_position].color;
             if (iterations == max_iterations) {
                 m_buffer[buffer_position] = Color{};
@@ -499,7 +497,7 @@ private:
 
     void colorize_hsl()
     {
-        for (int32_t buffer_position = 0; buffer_position < static_cast<int32_t>(m_buffer.size()); ++buffer_position) {
+        for (uint32_t buffer_position = 0; buffer_position < m_buffer.size(); ++buffer_position) {
             auto const iterations = m_buffer[buffer_position].color;
             auto const iterations_ratio = static_cast<double>(iterations) / static_cast<double>(max_iterations);
             if (iterations == max_iterations) {
