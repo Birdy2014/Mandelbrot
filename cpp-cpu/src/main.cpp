@@ -13,7 +13,6 @@
 #include <vector>
 
 // Parameters
-static bool constexpr use_double_precision = true;
 static int32_t constexpr chunk_size = 32 * 8;
 static int32_t constexpr max_iterations = 1000;
 static bool constexpr use_avx2 = true;
@@ -198,12 +197,10 @@ struct Chunk {
             return;
         }
 
-        if (use_avx2 && !use_double_precision) {
-            compute_avx2_single();
-        } else if (use_avx2 && use_double_precision) {
+        if (use_avx2) {
             compute_avx2_double();
         } else {
-            compute_normal();
+            compute_double();
         }
 
         switch (color_function) {
@@ -255,7 +252,7 @@ private:
         , m_complex_size{complex_size}
     { }
 
-    void compute_normal()
+    void compute_double()
     {
         Complex c = m_position;
         double const pixel_delta = m_complex_size / chunk_size;
@@ -281,114 +278,6 @@ private:
             m_buffer[buffer_position].color = iteration;
 
             c.real += pixel_delta;
-        }
-    }
-
-    void compute_avx2_single()
-    {
-        auto const pixel_delta_single = m_complex_size / chunk_size;
-
-        auto const pixel_delta_imag = _mm256_set_ps(
-            pixel_delta_single,
-            pixel_delta_single,
-            pixel_delta_single,
-            pixel_delta_single,
-            pixel_delta_single,
-            pixel_delta_single,
-            pixel_delta_single,
-            pixel_delta_single);
-
-        auto const pixel_delta_real = _mm256_set_ps(
-            pixel_delta_single * 8,
-            pixel_delta_single * 8,
-            pixel_delta_single * 8,
-            pixel_delta_single * 8,
-            pixel_delta_single * 8,
-            pixel_delta_single * 8,
-            pixel_delta_single * 8,
-            pixel_delta_single * 8);
-
-        // Why do they have to be ordered like this?
-        auto const c_real_start = _mm256_set_ps(
-            m_position.real + pixel_delta_single * 7,
-            m_position.real + pixel_delta_single * 6,
-            m_position.real + pixel_delta_single * 5,
-            m_position.real + pixel_delta_single * 4,
-            m_position.real + pixel_delta_single * 3,
-            m_position.real + pixel_delta_single * 2,
-            m_position.real + pixel_delta_single * 1,
-            m_position.real + pixel_delta_single * 0);
-
-        auto c_real = c_real_start;
-
-        auto c_imag = _mm256_set_ps(
-            m_position.imag,
-            m_position.imag,
-            m_position.imag,
-            m_position.imag,
-            m_position.imag,
-            m_position.imag,
-            m_position.imag,
-            m_position.imag);
-
-        auto const const_0 = _mm256_set_ps(0, 0, 0, 0, 0, 0, 0, 0);
-        auto const const_2 = _mm256_set_ps(2, 2, 2, 2, 2, 2, 2, 2);
-        auto const const_4 = _mm256_set_ps(4, 4, 4, 4, 4, 4, 4, 4);
-
-        {
-            Color color_max_iterations;
-            color_max_iterations.color = max_iterations;
-            m_buffer.fill(color_max_iterations);
-        }
-
-        for (int32_t buffer_position = 0; buffer_position < static_cast<int32_t>(m_buffer.size()); buffer_position += 8) {
-            if (buffer_position > 0 && buffer_position % chunk_size == 0) {
-                c_real = c_real_start;
-                c_imag = _mm256_add_ps(c_imag, pixel_delta_imag);
-            }
-
-            auto z_real = const_0;
-            auto z_imag = const_0;
-            auto z_tmp_real = const_0;
-            auto z_tmp_imag = const_0;
-
-            for (int32_t iteration = 0; iteration < max_iterations; ++iteration) {
-                auto abs = _mm256_add_ps(_mm256_mul_ps(z_real, z_real), _mm256_mul_ps(z_imag, z_imag));
-                auto comparison_mask = _mm256_cmp_ps(abs, const_4, _CMP_GE_OS);
-                if (!_mm256_testz_si256(comparison_mask, comparison_mask)) {
-                    int32_t done_count = 0;
-
-#define CHECK_FIELD_32(N)                                                          \
-    {                                                                              \
-        auto CONCAT(field_is_done_, N) = _mm256_extract_epi32(comparison_mask, N); \
-        if (CONCAT(field_is_done_, N)) {                                           \
-            if (m_buffer[buffer_position + N].color == max_iterations) {           \
-                m_buffer[buffer_position + N].color = iteration;                   \
-            }                                                                      \
-            ++done_count;                                                          \
-        }                                                                          \
-    }
-                    CHECK_FIELD_32(0)
-                    CHECK_FIELD_32(1)
-                    CHECK_FIELD_32(2)
-                    CHECK_FIELD_32(3)
-                    CHECK_FIELD_32(4)
-                    CHECK_FIELD_32(5)
-                    CHECK_FIELD_32(6)
-                    CHECK_FIELD_32(7)
-
-                    if (done_count == 8) {
-                        break;
-                    }
-                }
-
-                z_tmp_real = _mm256_add_ps(_mm256_sub_ps(_mm256_mul_ps(z_real, z_real), _mm256_mul_ps(z_imag, z_imag)), c_real);
-                z_tmp_imag = _mm256_add_ps(_mm256_mul_ps(_mm256_mul_ps(z_real, z_imag), const_2), c_imag);
-                z_real = z_tmp_real;
-                z_imag = z_tmp_imag;
-            }
-
-            c_real = _mm256_add_ps(c_real, pixel_delta_real);
         }
     }
 
