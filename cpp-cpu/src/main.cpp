@@ -84,7 +84,7 @@ struct HSLColor {
             };
         }
 
-        auto const h = std::clamp<uint16_t>(hue, 0, 359) / 100.0;
+        auto const h = std::clamp<uint16_t>(hue, 0, 359);
         auto const s = std::clamp<uint8_t>(saturation, 0, 100) / 100.0;
         auto const l = std::clamp<uint8_t>(lightness, 0, 100) / 100.0;
 
