@@ -1,4 +1,5 @@
-#include <MiniFB.h>
+#include "wayland.hpp"
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <condition_variable>
@@ -10,7 +11,11 @@
 #include <queue>
 #include <span>
 #include <thread>
+#include <unordered_map>
 #include <vector>
+
+// TODO: Smooth shading: https://linas.org/art-gallery/escape/smooth.html
+// TODO: Anti-Aliasing
 
 // Parameters
 static int32_t constexpr chunk_size = 32 * 8;
@@ -607,55 +612,64 @@ std::optional<Buffer> buffer = {};
 
 auto mandelbrot = Mandelbrot{};
 
+auto cursor_position = ScreenPosition{0, 0};
 auto cursor_start_local_position = ScreenPosition{0, 0};
 auto cursor_start_global_position = ScreenPosition{0, 0};
 auto lmb_pressed = false;
 
 int main()
 {
-    struct mfb_window* window = mfb_open_ex("Mandelbrot", 800, 600, WF_RESIZABLE);
-    if (!window)
-        return 0;
+    auto window = Window::open("Mandelbrot", 600, 500);
 
-    mfb_set_resize_callback(window, [](mfb_window* window, int width, int height) {
-        mfb_set_viewport(window, 0, 0, width, height);
+    buffer = Buffer::init(800, 600);
+
+    window->callback_window_resize = [](int width, int height) {
         buffer->resize(width, height);
-    });
+    };
 
-    // FIXME: Sometimes to view jumps while zooming or panning
+    window->callback_pointer_motion = [](int x, int y) {
+        cursor_position.x = x / 250;
+        cursor_position.y = y / 250;
 
-    mfb_set_mouse_button_callback(window, [](struct mfb_window* window, mfb_mouse_button button, mfb_key_mod, bool is_pressed) {
-        if (button != MOUSE_BTN_1) {
-            return;
-        }
-
-        if (!lmb_pressed && is_pressed) {
-            cursor_start_local_position.x = mfb_get_mouse_x(window);
-            cursor_start_local_position.y = mfb_get_mouse_y(window);
-            cursor_start_global_position = mandelbrot.top_left_global;
-        }
-
-        lmb_pressed = is_pressed;
-    });
-
-    mfb_set_mouse_move_callback(window, [](struct mfb_window*, int x, int y) {
         if (!lmb_pressed) {
             return;
         }
 
         auto const local_offset = ScreenPosition{
-            x - cursor_start_local_position.x,
-            y - cursor_start_local_position.y,
+            cursor_position.x - cursor_start_local_position.x,
+            cursor_position.y - cursor_start_local_position.y,
         };
 
         mandelbrot.top_left_global.x = cursor_start_global_position.x - local_offset.x;
         mandelbrot.top_left_global.y = cursor_start_global_position.y - local_offset.y;
-    });
+    };
 
-    mfb_set_mouse_scroll_callback(window, [](struct mfb_window* window, mfb_key_mod, [[maybe_unused]] float delta_x, float delta_y) {
+    window->callback_pointer_button = [](uint32_t button, wl_pointer_button_state state) {
+        if (button != BTN_LEFT) {
+            return;
+        }
+
+        auto const is_pressed = state == WL_POINTER_BUTTON_STATE_PRESSED;
+
+        if (!lmb_pressed && is_pressed) {
+            cursor_start_local_position.x = cursor_position.x;
+            cursor_start_local_position.y = cursor_position.y;
+            cursor_start_global_position = mandelbrot.top_left_global;
+        }
+
+        lmb_pressed = is_pressed;
+    };
+
+    window->callback_pointer_axis = [](wl_pointer_axis axis, int value) {
+        if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL) {
+            return;
+        }
+
+        value = -value / 500;
+
         auto const cursor_position_local_screen_space = ScreenPosition{
-            .x = mfb_get_mouse_x(window),
-            .y = mfb_get_mouse_y(window),
+            .x = cursor_position.x,
+            .y = cursor_position.y,
         };
 
         auto const cursor_position_global_screen_space = ScreenPosition{
@@ -665,34 +679,29 @@ int main()
 
         auto const cursor_position_mandelbrot_space = screen_space_to_mandelbrot_space(cursor_position_global_screen_space, mandelbrot.get_chunk_resolution());
 
-        mandelbrot.zoom_level = std::max<int32_t>(mandelbrot.zoom_level + delta_y, 1);
+        mandelbrot.zoom_level = std::max<int32_t>(mandelbrot.zoom_level + value, 1);
 
         auto const new_cursor_position_global_screen_space = mandelbrot_space_to_screen_space(cursor_position_mandelbrot_space, mandelbrot.get_chunk_resolution());
 
         mandelbrot.top_left_global.x = new_cursor_position_global_screen_space.x - cursor_position_local_screen_space.x;
         mandelbrot.top_left_global.y = new_cursor_position_global_screen_space.y - cursor_position_local_screen_space.y;
-    });
 
-    int state;
-
-    buffer = Buffer::init(800, 600);
+        // FIXME: "top_left_global" overflows/underflows when zoom_level gets too large
+    };
 
     mandelbrot.create_thread_pool();
 
-    do {
+    window->callback_draw = [](uint32_t* data, int width, int height, uint32_t elapsed) {
         mandelbrot.render(*buffer);
 
         mandelbrot.invalidate_cache();
 
-        state = mfb_update_ex(window, buffer->buffer().data(), buffer->width(), buffer->height());
-
-        if (state < 0) {
-            window = nullptr;
-            break;
-        }
+        memcpy(data, reinterpret_cast<uint32_t*>(buffer->buffer().data()), buffer->buffer().size() * 4);
 
         ++frame_number;
-    } while (mfb_wait_sync(window));
+    };
+
+    window->mainloop();
 
     mandelbrot.destroy_thread_pool();
 }
