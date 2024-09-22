@@ -18,8 +18,8 @@
 // TODO: Anti-Aliasing
 
 // Parameters
-static int32_t constexpr chunk_size = 32 * 8;
-static int32_t constexpr max_iterations = 1000;
+static int64_t constexpr chunk_size = 32 * 8;
+static int64_t constexpr max_iterations = 1000;
 static bool constexpr use_avx2 = true;
 static int32_t constexpr thread_count = 8;
 static int32_t constexpr max_queue_size = thread_count;
@@ -31,8 +31,8 @@ std::size_t frame_number = 0;
 #define CONCAT(a, b) a##b
 
 struct ScreenPosition {
-    int32_t x;
-    int32_t y;
+    int64_t x;
+    int64_t y;
 };
 
 struct Complex {
@@ -41,8 +41,8 @@ struct Complex {
 };
 
 struct ChunkGridPosition {
-    int32_t real;
-    int32_t imag;
+    int64_t real;
+    int64_t imag;
 
     bool operator==(ChunkGridPosition const& other) const = default;
 };
@@ -51,7 +51,7 @@ template <>
 struct std::hash<ChunkGridPosition> {
     std::size_t operator()(ChunkGridPosition const& value) const
     {
-        return (hash<int32_t>()(value.real) ^ hash<int32_t>()(value.imag));
+        return (hash<int64_t>()(value.real) ^ hash<int64_t>()(value.imag));
     }
 };
 
@@ -133,7 +133,7 @@ struct HSLColor {
 struct Chunk;
 
 struct Buffer {
-    static Buffer init(int32_t width, int32_t height)
+    static Buffer init(int64_t width, int64_t height)
     {
         return Buffer{
             width,
@@ -142,7 +142,7 @@ struct Buffer {
         };
     }
 
-    Buffer(int32_t width, int32_t height, std::vector<int32_t> buffer)
+    Buffer(int64_t width, int64_t height, std::vector<int32_t> buffer)
         : m_width{width}
         , m_height{height}
         , m_buffer{buffer}
@@ -153,7 +153,7 @@ struct Buffer {
         m_buffer[position.y * m_width + position.x] = color.color;
     }
 
-    void set(int32_t position, Color color)
+    void set(int64_t position, Color color)
     {
         m_buffer[position] = color.color;
     }
@@ -163,17 +163,17 @@ struct Buffer {
         return m_buffer;
     }
 
-    [[nodiscard]] int32_t width() const
+    [[nodiscard]] int64_t width() const
     {
         return m_width;
     }
 
-    [[nodiscard]] int32_t height() const
+    [[nodiscard]] int64_t height() const
     {
         return m_height;
     }
 
-    void resize(int32_t width, int32_t height)
+    void resize(int64_t width, int64_t height)
     {
         m_width = width;
         m_height = height;
@@ -183,8 +183,8 @@ struct Buffer {
     void blit(Chunk const&, ScreenPosition);
 
 private:
-    int32_t m_width;
-    int32_t m_height;
+    int64_t m_width;
+    int64_t m_height;
     std::vector<int32_t> m_buffer;
 };
 
@@ -262,7 +262,7 @@ private:
         Complex c = m_position;
         double const pixel_delta = m_complex_size / chunk_size;
 
-        for (int32_t buffer_position = 0; buffer_position < static_cast<int32_t>(m_buffer.size()); ++buffer_position) {
+        for (int64_t buffer_position = 0; buffer_position < static_cast<int64_t>(m_buffer.size()); ++buffer_position) {
             if (buffer_position > 0 && buffer_position % chunk_size == 0) {
                 c.real = m_position.real;
                 c.imag += pixel_delta;
@@ -327,7 +327,7 @@ private:
             m_buffer.fill(color_max_iterations);
         }
 
-        for (int32_t buffer_position = 0; buffer_position < static_cast<int32_t>(m_buffer.size()); buffer_position += 4) {
+        for (int64_t buffer_position = 0; buffer_position < static_cast<int64_t>(m_buffer.size()); buffer_position += 4) {
             if (buffer_position > 0 && buffer_position % chunk_size == 0) {
                 c_real = c_real_start;
                 c_imag = _mm256_add_pd(c_imag, pixel_delta_imag);
@@ -411,21 +411,21 @@ private:
 
 void Buffer::blit(Chunk const& chunk, ScreenPosition position)
 {
-    auto const buffer_col_start = std::clamp(position.y, 0, m_height);
-    auto const buffer_col_end = std::clamp(position.y + chunk_size, 0, m_height);
+    auto const buffer_col_start = std::clamp(position.y, 0l, m_height);
+    auto const buffer_col_end = std::clamp(position.y + chunk_size, 0l, m_height);
     auto const col_height = buffer_col_end - buffer_col_start;
-    auto const chunk_col_start = std::clamp(-position.y, 0, chunk_size);
+    auto const chunk_col_start = std::clamp(-position.y, 0l, chunk_size);
 
-    auto const buffer_line_start = std::clamp(position.x, 0, m_width);
-    auto const buffer_line_end = std::clamp(position.x + chunk_size, 0, m_width);
+    auto const buffer_line_start = std::clamp(position.x, 0l, m_width);
+    auto const buffer_line_end = std::clamp(position.x + chunk_size, 0l, m_width);
     auto line_width = buffer_line_end - buffer_line_start;
-    auto const chunk_line_start = std::clamp(-position.x, 0, chunk_size);
+    auto const chunk_line_start = std::clamp(-position.x, 0l, chunk_size);
 
     if (col_height == 0 || line_width == 0) {
         return;
     }
 
-    for (int32_t y = 0; y < col_height; ++y) {
+    for (int64_t y = 0; y < col_height; ++y) {
         auto* dest = &m_buffer.data()[(buffer_col_start + y) * m_width + buffer_line_start];
         auto const* src = &chunk.buffer()[(chunk_col_start + y) * chunk_size + chunk_line_start];
         std::memcpy(dest, src, line_width * sizeof(Color));
@@ -445,8 +445,8 @@ Complex screen_space_to_mandelbrot_space(ScreenPosition screen_position, double 
 ScreenPosition mandelbrot_space_to_screen_space(Complex mandelbrot_position, double chunk_resolution)
 {
     return ScreenPosition{
-        .x = static_cast<int32_t>((chunk_size / chunk_resolution) * mandelbrot_position.real),
-        .y = static_cast<int32_t>((chunk_size / chunk_resolution) * mandelbrot_position.imag),
+        .x = static_cast<int64_t>((chunk_size / chunk_resolution) * mandelbrot_position.real),
+        .y = static_cast<int64_t>((chunk_size / chunk_resolution) * mandelbrot_position.imag),
     };
 }
 
@@ -464,8 +464,8 @@ struct Mandelbrot {
 
         // Grid starts at 0+0i, with step width of chunk_resolution
         auto const top_left_chunk_position = ChunkGridPosition{
-            static_cast<int32_t>(std::floor(top_left_mandelbrot_space.real / chunk_resolution)),
-            static_cast<int32_t>(std::floor(top_left_mandelbrot_space.imag / chunk_resolution)),
+            static_cast<int64_t>(std::floor(top_left_mandelbrot_space.real / chunk_resolution)),
+            static_cast<int64_t>(std::floor(top_left_mandelbrot_space.imag / chunk_resolution)),
         };
 
         auto const top_left_chunk_global_screen_position = ScreenPosition{
@@ -685,8 +685,6 @@ int main()
 
         mandelbrot.top_left_global.x = new_cursor_position_global_screen_space.x - cursor_position_local_screen_space.x;
         mandelbrot.top_left_global.y = new_cursor_position_global_screen_space.y - cursor_position_local_screen_space.y;
-
-        // FIXME: "top_left_global" overflows/underflows when zoom_level gets too large
     };
 
     mandelbrot.create_thread_pool();
