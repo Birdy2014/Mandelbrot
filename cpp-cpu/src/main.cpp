@@ -17,6 +17,25 @@
 // TODO: Smooth shading: https://linas.org/art-gallery/escape/smooth.html
 // TODO: Anti-Aliasing
 
+struct Color {
+    union {
+        uint32_t color;
+        struct {
+            uint8_t b;
+            uint8_t g;
+            uint8_t r;
+            uint8_t a;
+        };
+    };
+
+    Color(uint8_t r = 0, uint8_t g = 0, uint8_t b = 0)
+        : b{b}
+        , g{g}
+        , r{r}
+        , a{0}
+    { }
+};
+
 // Parameters
 static int64_t constexpr chunk_size = 32 * 8;
 static int64_t constexpr max_iterations = 1000;
@@ -25,6 +44,7 @@ static int32_t constexpr thread_count = 8;
 static int32_t constexpr max_queue_size = thread_count;
 static std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
 static std::size_t constexpr color_function = 1; // 0: black_white, 1: hsl
+static Color const default_color{100, 100, 100};
 
 std::size_t frame_number = 0;
 
@@ -53,25 +73,6 @@ struct std::hash<ChunkGridPosition> {
     {
         return (hash<int64_t>()(value.real) ^ hash<int64_t>()(value.imag));
     }
-};
-
-struct Color {
-    union {
-        uint32_t color;
-        struct {
-            uint8_t b;
-            uint8_t g;
-            uint8_t r;
-            uint8_t a;
-        };
-    };
-
-    Color(uint8_t r = 0, uint8_t g = 0, uint8_t b = 0)
-        : b{b}
-        , g{g}
-        , r{r}
-        , a{0}
-    { }
 };
 
 struct HSLColor {
@@ -180,6 +181,11 @@ struct Buffer {
         m_buffer.resize(width * height);
     }
 
+    void fill(Color color)
+    {
+        std::fill(m_buffer.begin(), m_buffer.end(), color.color);
+    }
+
     void blit(Chunk const&, ScreenPosition);
 
 private:
@@ -195,6 +201,11 @@ struct Chunk {
             position,
             complex_size};
     };
+
+    static Chunk create_dummy()
+    {
+        return Chunk{};
+    }
 
     void compute()
     {
@@ -256,6 +267,14 @@ private:
         : m_position{position}
         , m_complex_size{complex_size}
     { }
+
+    Chunk()
+        : m_ready{true}
+        , m_position{0, 0}
+        , m_complex_size{0}
+    {
+        m_buffer.fill(default_color);
+    }
 
     void compute_double()
     {
@@ -494,6 +513,8 @@ struct Mandelbrot {
                 if (chunk && chunk->is_ready()) {
                     chunk->update_last_access_time();
                     buffer.blit(*chunk, local_screen_chunk_offset);
+                } else {
+                    buffer.blit(dummy_chunk, local_screen_chunk_offset);
                 }
             }
         }
@@ -582,6 +603,7 @@ private:
     std::condition_variable m_queue_convar;
     std::vector<std::thread> m_threads;
     bool m_threads_running{true};
+    Chunk const dummy_chunk = Chunk::create_dummy();
 
     Chunk* get_or_create_chunk(double chunk_resolution, ChunkGridPosition position)
     {
