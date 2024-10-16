@@ -157,6 +157,43 @@ auto const pointer_listener = wl_pointer_listener{
     .axis = handler_pointer_axis,
 };
 
+void handler_keyboard_enter(void* data, struct wl_keyboard*, uint32_t serial, struct wl_surface*, struct wl_array* keys)
+{
+}
+
+void handler_keyboard_leave(void* data, struct wl_keyboard*, uint32_t serial, struct wl_surface*)
+{
+}
+
+void handler_keyboard_key(void* data, struct wl_keyboard*, uint32_t serial, uint32_t time, uint32_t key, uint32_t state)
+{
+    auto* window = static_cast<Window*>(data);
+    if (window->callback_keyboard_key) {
+        window->callback_keyboard_key(key, static_cast<wl_keyboard_key_state>(state));
+    }
+}
+
+void handler_keyboard_keymap(void* data, struct wl_keyboard*, uint32_t format, int fd, uint32_t size)
+{
+}
+
+void handler_keyboard_modifiers(void* data, struct wl_keyboard*, uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched, uint32_t mods_locked, uint32_t group)
+{
+}
+
+void handler_keyboard_repeat_info(void* data, struct wl_keyboard*, int32_t rate, int32_t delay)
+{
+}
+
+auto const keyboard_listener = wl_keyboard_listener{
+    .keymap = handler_keyboard_keymap,
+    .enter = handler_keyboard_enter,
+    .leave = handler_keyboard_leave,
+    .key = handler_keyboard_key,
+    .modifiers = handler_keyboard_modifiers,
+    .repeat_info = handler_keyboard_repeat_info,
+};
+
 void handler_surface_frame_done(void* data, wl_callback* cb, uint32_t time);
 
 auto const surface_frame_listener = wl_callback_listener{
@@ -242,6 +279,9 @@ std::unique_ptr<Window> Window::open(char const* title, int width, int height)
 
     auto* pointer = wl_seat_get_pointer(window->seat);
     wl_pointer_add_listener(pointer, &pointer_listener, window.get());
+
+    auto* keyboard = wl_seat_get_keyboard(window->seat);
+    wl_keyboard_add_listener(keyboard, &keyboard_listener, window.get());
 
     auto* cursor_theme = wl_cursor_theme_load(nullptr, 24, window->shm);
     auto* cursor = wl_cursor_theme_get_cursor(cursor_theme, "left_ptr");

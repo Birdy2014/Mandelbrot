@@ -1,6 +1,6 @@
 #include "wayland.hpp"
+
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <condition_variable>
 #include <cstring>
@@ -34,6 +34,11 @@ struct Color {
         , r{r}
         , a{0}
     { }
+
+    bool operator==(Color const& other) const
+    {
+        return color == other.color;
+    }
 };
 
 // Parameters
@@ -47,6 +52,74 @@ static std::size_t constexpr color_function = 1; // 0: black_white, 1: hsl
 static Color const default_color{100, 100, 100};
 
 std::size_t frame_number = 0;
+
+struct QOIImage {
+    static int encode_to_file(char const* filepath, Color* data, int width, int height)
+    {
+        FILE* out_file = fopen(filepath, "w");
+        if (!out_file) {
+            return 0;
+        }
+
+        struct Header header = {
+            .magic = {'q', 'o', 'i', 'f'},
+            .width = htobe32(width),
+            .height = htobe32(height),
+            .channels = 3,
+            .colorspace = 0,
+        };
+
+        fwrite(&header, 1, 14, out_file);
+
+        uint8_t op_buffer[5];
+
+        for (int pixel_index = 0; pixel_index < width * height;) {
+            int run_length = 0;
+            while (pixel_index + run_length < width * height
+                && run_length < 62
+                && data[pixel_index + run_length] == last_pixel(data, pixel_index + run_length)) {
+                ++run_length;
+            }
+
+            if (run_length > 0) {
+                // Generate QOI_OP_RUN
+                op_buffer[0] = 192 | (run_length - 1);
+                fwrite(&op_buffer, 1, 1, out_file);
+                pixel_index += run_length;
+                continue;
+            }
+
+            // Generate QOI_OP_RGB
+            op_buffer[0] = 254;
+            op_buffer[1] = data[pixel_index].r;
+            op_buffer[2] = data[pixel_index].g;
+            op_buffer[3] = data[pixel_index].b;
+            fwrite(&op_buffer, 1, 4, out_file);
+            ++pixel_index;
+        }
+
+        fclose(out_file);
+
+        return 1;
+    }
+
+private:
+    struct Header {
+        char magic[4];
+        uint32_t width;
+        uint32_t height;
+        uint8_t channels;
+        uint8_t colorspace;
+    };
+
+    static Color last_pixel(Color* data, int index)
+    {
+        if (index - 1 < 0) {
+            return Color{};
+        }
+        return data[index - 1];
+    }
+};
 
 #define CONCAT(a, b) a##b
 
@@ -707,6 +780,18 @@ int main()
 
         mandelbrot.top_left_global.x = new_cursor_position_global_screen_space.x - cursor_position_local_screen_space.x;
         mandelbrot.top_left_global.y = new_cursor_position_global_screen_space.y - cursor_position_local_screen_space.y;
+    };
+
+    window->callback_keyboard_key = [](uint32_t scancode, wl_keyboard_key_state state) {
+        if (state != WL_KEYBOARD_KEY_STATE_PRESSED) {
+            return;
+        }
+
+        if (scancode == 31) {
+            if (buffer.has_value()) {
+                QOIImage::encode_to_file("mandelbrot.qoi", reinterpret_cast<Color*>(buffer->buffer().data()), buffer->width(), buffer->height());
+            }
+        }
     };
 
     mandelbrot.create_thread_pool();
