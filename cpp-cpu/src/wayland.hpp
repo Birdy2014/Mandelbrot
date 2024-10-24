@@ -1,7 +1,7 @@
 #pragma once
 
-#include "generated/xdg-decoration.h"
-#include "generated/xdg-shell.h"
+#include "xdg-decoration-unstable-v1.h"
+#include "xdg-shell.h"
 #include <functional>
 #include <linux/input-event-codes.h>
 #include <memory>
