@@ -169,7 +169,7 @@ void handler_keyboard_key(void* data, struct wl_keyboard*, uint32_t serial, uint
 {
     auto* window = static_cast<Window*>(data);
     if (window->callback_keyboard_key) {
-        window->callback_keyboard_key(key, static_cast<wl_keyboard_key_state>(state));
+        window->callback_keyboard_key(static_cast<Scancodes>(key), static_cast<wl_keyboard_key_state>(state));
     }
 }
 

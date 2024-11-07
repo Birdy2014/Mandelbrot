@@ -18,6 +18,10 @@
 
 // TODO: Smooth shading: https://linas.org/art-gallery/escape/smooth.html
 // TODO: Anti-Aliasing
+// TODO: Vulkan compute: https://bakedbits.dev/posts/vulkan-compute-example
+// TODO: wayland: use wp_cursor_shape_manager_v1 instead of wayland-cursor
+// TODO: Use old upscaled chunk as fallback
+// FIXME: Store max_iterations in chunk and only use a chunk if it matches the global max_iterations
 
 struct Color {
     union {
@@ -44,15 +48,16 @@ struct Color {
 };
 
 // Parameters
-static int64_t constexpr chunk_size = 32 * 8;
-static int64_t constexpr max_iterations = 1000;
-static bool constexpr use_avx2 = true;
-static int32_t constexpr thread_count = 8;
-static int32_t constexpr max_queue_size = thread_count;
-static std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
-static std::size_t constexpr color_function = 1; // 0: black_white, 1: hsl
-static Color const default_color{100, 100, 100};
+int64_t constexpr chunk_size = 32 * 8;
+int64_t max_iterations = 1000;
+bool constexpr use_avx2 = true;
+int32_t constexpr thread_count = 8;
+int32_t constexpr max_queue_size = thread_count;
+std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
+std::size_t constexpr color_function = 1; // 0: black_white, 1: hsl
+Color const default_color{100, 100, 100};
 int64_t constexpr text_scale = 2;
+bool info_text_visible = true;
 
 std::size_t frame_number = 0;
 
@@ -811,12 +816,13 @@ int main()
         mandelbrot.top_left_global.y = new_cursor_position_global_screen_space.y - cursor_position_local_screen_space.y;
     };
 
-    window->callback_keyboard_key = [](uint32_t scancode, wl_keyboard_key_state state) {
+    window->callback_keyboard_key = [](Scancodes scancode, wl_keyboard_key_state state) {
         if (state != WL_KEYBOARD_KEY_STATE_PRESSED) {
             return;
         }
 
-        if (scancode == 31) {
+        switch (scancode) {
+        case Scancodes::S:
             if (buffer.has_value()) {
                 std::string filename;
                 for (int image_number = 0;; ++image_number) {
@@ -827,6 +833,19 @@ int main()
                 }
                 QOIImage::encode_to_file(filename.c_str(), reinterpret_cast<Color*>(buffer->buffer().data()), buffer->width(), buffer->height());
             }
+            break;
+        case Scancodes::I:
+            info_text_visible = !info_text_visible;
+            break;
+        case Scancodes::PLUS:
+            ++max_iterations;
+            break;
+        case Scancodes::H:
+            // TODO: Toggle help text
+            break;
+        case Scancodes::MINUS:
+            --max_iterations;
+            break;
         }
     };
 
@@ -844,11 +863,13 @@ int main()
             };
         };
 
-        render_text_to_buffer(&*buffer, line_position(0), "max iterations: " + std::to_string(max_iterations));
-        render_text_to_buffer(&*buffer, line_position(1), "zoom: " + std::to_string(mandelbrot.zoom_level));
-        auto const top_left_mandelbrot_space = screen_space_to_mandelbrot_space(mandelbrot.top_left_global, mandelbrot.get_chunk_resolution());
-        render_text_to_buffer(&*buffer, line_position(2), "mandelbrot real: " + std::to_string(top_left_mandelbrot_space.real));
-        render_text_to_buffer(&*buffer, line_position(3), "mandelbrot imag: " + std::to_string(top_left_mandelbrot_space.imag));
+        if (info_text_visible) {
+            render_text_to_buffer(&*buffer, line_position(0), "max iterations: " + std::to_string(max_iterations));
+            render_text_to_buffer(&*buffer, line_position(1), "zoom: " + std::to_string(mandelbrot.zoom_level));
+            auto const top_left_mandelbrot_space = screen_space_to_mandelbrot_space(mandelbrot.top_left_global, mandelbrot.get_chunk_resolution());
+            render_text_to_buffer(&*buffer, line_position(2), "mandelbrot real: " + std::to_string(top_left_mandelbrot_space.real));
+            render_text_to_buffer(&*buffer, line_position(3), "mandelbrot imag: " + std::to_string(top_left_mandelbrot_space.imag));
+        }
 
         memcpy(data, reinterpret_cast<uint32_t*>(buffer->buffer().data()), buffer->buffer().size() * 4);
 
