@@ -1,5 +1,6 @@
 #include "wayland.hpp"
 
+#include "../vendor/font8x8_basic.h"
 #include <algorithm>
 #include <cmath>
 #include <condition_variable>
@@ -51,6 +52,7 @@ static int32_t constexpr max_queue_size = thread_count;
 static std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
 static std::size_t constexpr color_function = 1; // 0: black_white, 1: hsl
 static Color const default_color{100, 100, 100};
+int64_t constexpr text_scale = 2;
 
 std::size_t frame_number = 0;
 
@@ -704,6 +706,32 @@ private:
     };
 };
 
+void render_text_to_buffer(Buffer* buffer, ScreenPosition position, std::string_view text)
+{
+    int64_t const advance = 8 * text_scale;
+    unsigned char const fallback_glyph[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    for (size_t n = 0; n < text.length(); ++n) {
+        uint8_t character = text[n];
+        auto const* glyph = character < 128 ? font8x8_basic[character] : fallback_glyph;
+        for (int64_t y = 0; y < 8; ++y) {
+            auto const glyph_row = glyph[y];
+            for (int64_t x = 0; x < 8; ++x) {
+                if ((glyph_row >> x) & 1) {
+                    for (int64_t i = 0; i < text_scale * text_scale; ++i) {
+                        auto pixel_position = ScreenPosition{
+                            .x = position.x + static_cast<int64_t>(n) * advance + x * text_scale + i % text_scale,
+                            .y = position.y + y * text_scale + i / text_scale,
+                        };
+
+                        buffer->set(pixel_position, Color(255, 255, 255));
+                    }
+                }
+            }
+        }
+    }
+}
+
 std::optional<Buffer> buffer = {};
 
 auto mandelbrot = Mandelbrot{};
@@ -808,6 +836,19 @@ int main()
         mandelbrot.render(*buffer);
 
         mandelbrot.invalidate_cache();
+
+        auto line_position = [](auto line) {
+            return ScreenPosition{
+                .x = 10,
+                .y = 10 + line * 8 * text_scale,
+            };
+        };
+
+        render_text_to_buffer(&*buffer, line_position(0), "max iterations: " + std::to_string(max_iterations));
+        render_text_to_buffer(&*buffer, line_position(1), "zoom: " + std::to_string(mandelbrot.zoom_level));
+        auto const top_left_mandelbrot_space = screen_space_to_mandelbrot_space(mandelbrot.top_left_global, mandelbrot.get_chunk_resolution());
+        render_text_to_buffer(&*buffer, line_position(2), "mandelbrot real: " + std::to_string(top_left_mandelbrot_space.real));
+        render_text_to_buffer(&*buffer, line_position(3), "mandelbrot imag: " + std::to_string(top_left_mandelbrot_space.imag));
 
         memcpy(data, reinterpret_cast<uint32_t*>(buffer->buffer().data()), buffer->buffer().size() * 4);
 
