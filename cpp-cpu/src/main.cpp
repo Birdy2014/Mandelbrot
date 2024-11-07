@@ -4,6 +4,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstring>
+#include <filesystem>
 #include <immintrin.h>
 #include <iostream>
 #include <map>
@@ -789,7 +790,14 @@ int main()
 
         if (scancode == 31) {
             if (buffer.has_value()) {
-                QOIImage::encode_to_file("mandelbrot.qoi", reinterpret_cast<Color*>(buffer->buffer().data()), buffer->width(), buffer->height());
+                std::string filename;
+                for (int image_number = 0;; ++image_number) {
+                    filename = "mandelbrot-" + std::to_string(image_number) + ".qoi";
+                    if (!std::filesystem::exists(filename)) {
+                        break;
+                    }
+                }
+                QOIImage::encode_to_file(filename.c_str(), reinterpret_cast<Color*>(buffer->buffer().data()), buffer->width(), buffer->height());
             }
         }
     };
