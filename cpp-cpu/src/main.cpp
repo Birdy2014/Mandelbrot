@@ -683,7 +683,7 @@ struct Mandelbrot {
                 chunks.push_back(ChunkCacheListItem{identifier, &chunk});
         }
         std::sort(std::begin(chunks), std::end(chunks), [](auto const& lhs, auto const& rhs) -> bool {
-            return lhs.chunk->last_access_time() < rhs.chunk->last_access_time();
+            return (lhs.chunk->is_ready() && !rhs.chunk->is_ready()) || lhs.chunk->last_access_time() < rhs.chunk->last_access_time();
         });
 
         for (std::size_t i = 0; i < chunk_amount_to_delete; ++i) {
