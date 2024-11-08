@@ -20,7 +20,6 @@
 // TODO: Anti-Aliasing
 // TODO: Vulkan compute: https://bakedbits.dev/posts/vulkan-compute-example
 // TODO: wayland: use wp_cursor_shape_manager_v1 instead of wayland-cursor
-// TODO: Add "Saved screenshot at ..." message
 
 struct Color {
     union {
@@ -56,8 +55,15 @@ std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
 std::size_t constexpr color_function = 1; // 0: black_white, 1: hsl
 Color const default_color{100, 100, 100};
 int64_t constexpr text_scale = 2;
-bool info_text_visible = true;
 int64_t const fallback_resolution_scale = 8;
+uint32_t const message_display_duration = 4000; // ms
+
+// Global variables
+bool info_text_visible = true;
+bool help_text_visible = true;
+uint32_t last_message_time = 0;
+std::string last_message;
+uint32_t global_time = 0;
 
 std::size_t frame_number = 0;
 
@@ -912,6 +918,8 @@ int main()
                     }
                 }
                 QOIImage::encode_to_file(filename.c_str(), reinterpret_cast<Color*>(buffer->buffer().data()), buffer->width(), buffer->height());
+                last_message = "Saved screenshot to " + std::filesystem::current_path().string() + "/" + filename;
+                last_message_time = global_time;
             }
             break;
         case Scancodes::I:
@@ -921,7 +929,7 @@ int main()
             max_iterations += 50;
             break;
         case Scancodes::H:
-            // TODO: Toggle help text
+            help_text_visible = !help_text_visible;
             break;
         case Scancodes::MINUS:
             max_iterations -= 50;
@@ -933,24 +941,42 @@ int main()
 
     mandelbrot.create_thread_pool();
 
-    window->callback_draw = [](uint32_t* data, int width, int height, uint32_t elapsed) {
+    window->callback_draw = [](uint32_t* data, int width, int height, uint32_t time) {
+        global_time = time;
         mandelbrot.render(*buffer);
 
         mandelbrot.invalidate_cache();
 
-        auto line_position = [](auto line) {
-            return ScreenPosition{
+        int line = 0;
+        auto render_next_line = [&](auto text) {
+            auto position = ScreenPosition{
                 .x = 10,
-                .y = 10 + line * 8 * text_scale,
+                .y = 10 + line++ * 8 * text_scale,
             };
+            render_text_to_buffer(&*buffer, position, text);
         };
 
         if (info_text_visible) {
-            render_text_to_buffer(&*buffer, line_position(0), "max iterations: " + std::to_string(max_iterations));
-            render_text_to_buffer(&*buffer, line_position(1), "zoom: " + std::to_string(mandelbrot.zoom_level));
+            render_next_line("max iterations: " + std::to_string(max_iterations));
+            render_next_line("zoom: " + std::to_string(mandelbrot.zoom_level));
             auto const top_left_mandelbrot_space = screen_space_to_mandelbrot_space(mandelbrot.top_left_global, mandelbrot.get_chunk_resolution());
-            render_text_to_buffer(&*buffer, line_position(2), "mandelbrot real: " + std::to_string(top_left_mandelbrot_space.real));
-            render_text_to_buffer(&*buffer, line_position(3), "mandelbrot imag: " + std::to_string(top_left_mandelbrot_space.imag));
+            render_next_line("mandelbrot real: " + std::to_string(top_left_mandelbrot_space.real));
+            render_next_line("mandelbrot imag: " + std::to_string(top_left_mandelbrot_space.imag));
+            ++line;
+        }
+
+        if (help_text_visible) {
+            render_next_line("Keybindings:");
+            render_next_line("H: Toggle this help text");
+            render_next_line("I: Toggle informations");
+            render_next_line("S: Screenshot");
+            render_next_line("+: Increase max iterations");
+            render_next_line("-: Decrease max iterations");
+            ++line;
+        }
+
+        if (last_message_time + message_display_duration >= time) {
+            render_next_line(last_message);
         }
 
         memcpy(data, reinterpret_cast<uint32_t*>(buffer->buffer().data()), buffer->buffer().size() * 4);

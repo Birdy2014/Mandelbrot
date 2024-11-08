@@ -212,12 +212,10 @@ void handler_surface_frame_done(void* data, wl_callback* cb, uint32_t time)
     cb = wl_surface_frame(window->surface);
     wl_callback_add_listener(cb, &surface_frame_listener, window);
 
-    auto elapsed = time - window->last_frame;
-
     if (!window->callback_draw) {
         std::abort();
     }
-    window->callback_draw(window->mapped_data, window->width, window->height, elapsed);
+    window->callback_draw(window->mapped_data, window->width, window->height, time);
 
     /* Submit a frame for this event */
     wl_surface_attach(window->surface, window->buffer, 0, 0);

@@ -47,7 +47,7 @@ struct Window {
     std::function<void(uint32_t button, wl_pointer_button_state state)> callback_pointer_button;
     std::function<void(wl_pointer_axis axis, int value)> callback_pointer_axis;
     std::function<void(Scancodes scancode, wl_keyboard_key_state state)> callback_keyboard_key;
-    std::function<void(uint32_t* data, int width, int height, uint32_t elapsed)> callback_draw;
+    std::function<void(uint32_t* data, int width, int height, uint32_t time)> callback_draw;
 
     static std::unique_ptr<Window> open(char const* title, int width, int height);
     void mainloop();
