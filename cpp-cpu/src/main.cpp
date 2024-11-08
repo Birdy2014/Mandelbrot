@@ -20,8 +20,7 @@
 // TODO: Anti-Aliasing
 // TODO: Vulkan compute: https://bakedbits.dev/posts/vulkan-compute-example
 // TODO: wayland: use wp_cursor_shape_manager_v1 instead of wayland-cursor
-// TODO: Use old upscaled chunk as fallback
-// FIXME: Store max_iterations in chunk and only use a chunk if it matches the global max_iterations
+// TODO: Add "Saved screenshot at ..." message
 
 struct Color {
     union {
@@ -58,6 +57,7 @@ std::size_t constexpr color_function = 1; // 0: black_white, 1: hsl
 Color const default_color{100, 100, 100};
 int64_t constexpr text_scale = 2;
 bool info_text_visible = true;
+int64_t const fallback_resolution_scale = 8;
 
 std::size_t frame_number = 0;
 
@@ -276,11 +276,14 @@ private:
 };
 
 struct Chunk {
-    static Chunk create(Complex position, double complex_size)
+    static Chunk create(Complex position, double complex_size, int64_t max_iterations_local, int64_t resolution_scale)
     {
         return Chunk{
             position,
-            complex_size};
+            complex_size,
+            max_iterations_local,
+            resolution_scale,
+        };
     };
 
     static Chunk create_dummy()
@@ -298,6 +301,10 @@ struct Chunk {
             compute_avx2_double();
         } else {
             compute_double();
+        }
+
+        if (m_resolution_scale != 0) {
+            scale();
         }
 
         switch (color_function) {
@@ -339,20 +346,22 @@ struct Chunk {
 
 private:
     bool m_ready{false};
-    Complex m_position;
-    double m_complex_size;
+    Complex m_position{0, 0};
+    double m_complex_size{0};
     std::array<Color, chunk_size * chunk_size> m_buffer;
     std::size_t m_last_access_time{0};
+    int64_t m_max_iterations_local{0};
+    int64_t m_resolution_scale{1};
 
-    Chunk(Complex position, double complex_size)
+    Chunk(Complex position, double complex_size, int64_t max_iterations_local, int64_t resolution_scale)
         : m_position{position}
         , m_complex_size{complex_size}
+        , m_max_iterations_local{max_iterations_local}
+        , m_resolution_scale{resolution_scale}
     { }
 
     Chunk()
         : m_ready{true}
-        , m_position{0, 0}
-        , m_complex_size{0}
     {
         m_buffer.fill(default_color);
     }
@@ -360,10 +369,10 @@ private:
     void compute_double()
     {
         Complex c = m_position;
-        double const pixel_delta = m_complex_size / chunk_size;
+        double const pixel_delta = (m_complex_size / chunk_size) * m_resolution_scale;
 
-        for (int64_t buffer_position = 0; buffer_position < static_cast<int64_t>(m_buffer.size()); ++buffer_position) {
-            if (buffer_position > 0 && buffer_position % chunk_size == 0) {
+        for (int64_t buffer_position = 0; buffer_position < static_cast<int64_t>(m_buffer.size()) / (m_resolution_scale * m_resolution_scale); ++buffer_position) {
+            if (buffer_position > 0 && (buffer_position * m_resolution_scale) % chunk_size == 0) {
                 c.real = m_position.real;
                 c.imag += pixel_delta;
             }
@@ -372,7 +381,7 @@ private:
             Complex z_tmp = {0, 0};
 
             int32_t iteration = 0;
-            for (; iteration < max_iterations; ++iteration) {
+            for (; iteration < m_max_iterations_local; ++iteration) {
                 auto abs = z.real * z.real + z.imag * z.imag;
                 if (abs >= 4)
                     break;
@@ -388,7 +397,7 @@ private:
 
     void compute_avx2_double()
     {
-        auto const pixel_delta_single = m_complex_size / chunk_size;
+        auto const pixel_delta_single = (m_complex_size / chunk_size) * m_resolution_scale;
 
         auto const pixel_delta_imag = _mm256_set_pd(
             pixel_delta_single,
@@ -423,12 +432,12 @@ private:
 
         {
             Color color_max_iterations;
-            color_max_iterations.color = max_iterations;
+            color_max_iterations.color = m_max_iterations_local;
             m_buffer.fill(color_max_iterations);
         }
 
-        for (int64_t buffer_position = 0; buffer_position < static_cast<int64_t>(m_buffer.size()); buffer_position += 4) {
-            if (buffer_position > 0 && buffer_position % chunk_size == 0) {
+        for (int64_t buffer_position = 0; buffer_position < static_cast<int64_t>(m_buffer.size()) / m_resolution_scale; buffer_position += 4) {
+            if (buffer_position > 0 && (buffer_position * m_resolution_scale) % chunk_size == 0) {
                 c_real = c_real_start;
                 c_imag = _mm256_add_pd(c_imag, pixel_delta_imag);
             }
@@ -438,7 +447,7 @@ private:
             auto z_tmp_real = const_0;
             auto z_tmp_imag = const_0;
 
-            for (int32_t iteration = 0; iteration < max_iterations; ++iteration) {
+            for (int32_t iteration = 0; iteration < m_max_iterations_local; ++iteration) {
                 auto abs = _mm256_add_pd(_mm256_mul_pd(z_real, z_real), _mm256_mul_pd(z_imag, z_imag));
                 auto comparison_mask = _mm256_cmp_pd(abs, const_4, _CMP_GE_OS);
                 if (!_mm256_testz_si256(comparison_mask, comparison_mask)) {
@@ -448,7 +457,7 @@ private:
     {                                                                              \
         auto CONCAT(field_is_done_, N) = _mm256_extract_epi64(comparison_mask, N); \
         if (CONCAT(field_is_done_, N)) {                                           \
-            if (m_buffer[buffer_position + N].color == max_iterations) {           \
+            if (m_buffer[buffer_position + N].color == m_max_iterations_local) {   \
                 m_buffer[buffer_position + N].color = iteration;                   \
             }                                                                      \
             ++done_count;                                                          \
@@ -474,11 +483,23 @@ private:
         }
     }
 
+    void scale()
+    {
+        for (int32_t buffer_position = m_buffer.size() - 1; buffer_position > 0; --buffer_position) {
+            auto target_x = buffer_position % chunk_size;
+            auto target_y = buffer_position / chunk_size;
+            auto source_x = target_x / m_resolution_scale;
+            auto source_y = target_y / m_resolution_scale;
+            auto source_buffer_position = source_x + source_y * (chunk_size / m_resolution_scale);
+            m_buffer[buffer_position] = m_buffer[source_buffer_position];
+        }
+    }
+
     void colorize_black_white()
     {
         for (uint32_t buffer_position = 0; buffer_position < m_buffer.size(); ++buffer_position) {
             auto const iterations = m_buffer[buffer_position].color;
-            if (iterations == max_iterations) {
+            if (iterations == m_max_iterations_local) {
                 m_buffer[buffer_position] = Color{};
             } else {
                 m_buffer[buffer_position] = Color{
@@ -494,8 +515,8 @@ private:
     {
         for (uint32_t buffer_position = 0; buffer_position < m_buffer.size(); ++buffer_position) {
             auto const iterations = m_buffer[buffer_position].color;
-            auto const iterations_ratio = static_cast<double>(iterations) / static_cast<double>(max_iterations);
-            if (iterations == max_iterations) {
+            auto const iterations_ratio = static_cast<double>(iterations) / static_cast<double>(m_max_iterations_local);
+            if (iterations == m_max_iterations_local) {
                 m_buffer[buffer_position] = Color{};
             } else {
                 m_buffer[buffer_position] = HSLColor{
@@ -635,20 +656,11 @@ struct Mandelbrot {
         m_threads.clear();
     }
 
-    struct ChunkCacheListItem {
-        Chunk const* chunk;
-        double resolution;
-        ChunkGridPosition position;
-    };
-
     void invalidate_cache()
     {
         auto const single_chunk_memory = chunk_size * chunk_size * sizeof(Color);
 
-        std::size_t cache_memory = 0;
-        for (auto const& [resolution, chunks_at_res] : m_chunks) {
-            cache_memory += chunks_at_res.size() * single_chunk_memory;
-        }
+        std::size_t cache_memory = m_chunks.size() * single_chunk_memory;
 
         if (cache_memory <= max_chunk_memory) {
             return;
@@ -660,11 +672,9 @@ struct Mandelbrot {
         std::cout << "Removing " << chunk_amount_to_delete << " chunks\n";
 
         std::vector<ChunkCacheListItem> chunks;
-        for (auto const& [resolution, chunks_at_res] : m_chunks) {
-            for (auto const& [position, chunk] : chunks_at_res) {
-                if (chunk.is_ready())
-                    chunks.push_back(ChunkCacheListItem{&chunk, resolution, position});
-            }
+        for (auto const& [identifier, chunk] : m_chunks) {
+            if (chunk.is_ready())
+                chunks.push_back(ChunkCacheListItem{identifier, &chunk});
         }
         std::sort(std::begin(chunks), std::end(chunks), [](auto const& lhs, auto const& rhs) -> bool {
             return lhs.chunk->last_access_time() < rhs.chunk->last_access_time();
@@ -672,12 +682,45 @@ struct Mandelbrot {
 
         for (std::size_t i = 0; i < chunk_amount_to_delete; ++i) {
             auto to_delete = chunks.at(i);
-            m_chunks[to_delete.resolution].erase(to_delete.position);
+            m_chunks.erase(to_delete.identifier);
+        }
+    }
+
+    void flush_chunk_queue()
+    {
+        std::lock_guard<std::mutex> lock{m_queue_mutex};
+        while (!m_chunk_queue.empty()) {
+            m_chunk_queue.pop();
         }
     }
 
 private:
-    std::map<double, std::unordered_map<ChunkGridPosition, Chunk>> m_chunks;
+    struct ChunkIdentifier {
+        double chunk_resolution;
+        ChunkGridPosition chunk_grid_position;
+        int64_t max_iterations;
+        int64_t resolution_scale;
+
+        bool operator==(ChunkIdentifier const& other) const = default;
+    };
+
+    struct HashChunkIdentifier {
+        std::size_t operator()(ChunkIdentifier const& id) const
+        {
+            return ((std::hash<double>()(id.chunk_resolution)
+                        ^ (std::hash<ChunkGridPosition>()(id.chunk_grid_position) << 1))
+                       >> 1)
+                ^ (std::hash<int64_t>()(id.max_iterations) << 1)
+                ^ std::hash<int64_t>()(id.resolution_scale);
+        }
+    };
+
+    struct ChunkCacheListItem {
+        ChunkIdentifier identifier;
+        Chunk const* chunk;
+    };
+
+    std::unordered_map<ChunkIdentifier, Chunk, HashChunkIdentifier> m_chunks;
 
     std::queue<std::reference_wrapper<Chunk>> m_chunk_queue;
     std::mutex m_queue_mutex;
@@ -688,27 +731,62 @@ private:
 
     Chunk* get_or_create_chunk(double chunk_resolution, ChunkGridPosition position)
     {
-        auto& chunks_at_res = m_chunks[chunk_resolution];
-        if (!chunks_at_res.contains(position)) {
-            if (m_chunk_queue.size() <= max_queue_size) {
-                auto const complex_chunk_position = Complex{
-                    .real = position.real * chunk_resolution,
-                    .imag = position.imag * chunk_resolution,
-                };
-                chunks_at_res.insert(std::make_pair(position, Chunk::create(complex_chunk_position, chunk_resolution)));
+        auto preferred_chunk_identifier = ChunkIdentifier{
+            .chunk_resolution = chunk_resolution,
+            .chunk_grid_position = position,
+            .max_iterations = max_iterations,
+            .resolution_scale = 1,
+        };
 
-                auto& new_chunk = chunks_at_res.at(position);
-                {
-                    std::lock_guard<std::mutex> lock{m_queue_mutex};
-                    m_chunk_queue.push(new_chunk);
-                }
-                m_queue_convar.notify_one();
-            }
+        auto fallback_chunk_identifier = ChunkIdentifier{
+            .chunk_resolution = chunk_resolution,
+            .chunk_grid_position = position,
+            .max_iterations = max_iterations,
+            .resolution_scale = fallback_resolution_scale,
+        };
+
+        if (m_chunks.contains(preferred_chunk_identifier) && m_chunks.at(preferred_chunk_identifier).is_ready()) {
+            return &m_chunks.at(preferred_chunk_identifier);
         }
-        if (chunks_at_res.contains(position))
-            return &chunks_at_res.at(position);
+
+        if (m_chunks.contains(fallback_chunk_identifier) && m_chunks.at(fallback_chunk_identifier).is_ready()) {
+            enqueue_chunk(preferred_chunk_identifier);
+            return &m_chunks.at(fallback_chunk_identifier);
+        }
+
+        if (fallback_resolution_scale == 1) {
+            enqueue_chunk(preferred_chunk_identifier);
+        } else {
+            enqueue_chunk(fallback_chunk_identifier);
+        }
         return nullptr;
     };
+
+    bool enqueue_chunk(ChunkIdentifier identifier)
+    {
+        if (m_chunk_queue.size() > max_queue_size) {
+            return false;
+        }
+
+        if (m_chunks.contains(identifier)) {
+            return false;
+        }
+
+        auto const complex_chunk_position = Complex{
+            .real = identifier.chunk_grid_position.real * identifier.chunk_resolution,
+            .imag = identifier.chunk_grid_position.imag * identifier.chunk_resolution,
+        };
+
+        m_chunks.insert(std::make_pair(identifier, Chunk::create(complex_chunk_position, identifier.chunk_resolution, identifier.max_iterations, identifier.resolution_scale)));
+
+        auto& new_chunk = m_chunks.at(identifier);
+        {
+            std::lock_guard<std::mutex> lock{m_queue_mutex};
+            m_chunk_queue.push(new_chunk);
+        }
+        m_queue_convar.notify_one();
+        return true;
+    }
 };
 
 void render_text_to_buffer(Buffer* buffer, ScreenPosition position, std::string_view text)
@@ -814,6 +892,8 @@ int main()
 
         mandelbrot.top_left_global.x = new_cursor_position_global_screen_space.x - cursor_position_local_screen_space.x;
         mandelbrot.top_left_global.y = new_cursor_position_global_screen_space.y - cursor_position_local_screen_space.y;
+
+        mandelbrot.flush_chunk_queue();
     };
 
     window->callback_keyboard_key = [](Scancodes scancode, wl_keyboard_key_state state) {
@@ -846,6 +926,8 @@ int main()
         case Scancodes::MINUS:
             --max_iterations;
             break;
+        default:
+            std::cout << "Scancode: " << std::to_string(static_cast<uint32_t>(scancode)) << "\n";
         }
     };
 
