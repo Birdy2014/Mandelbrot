@@ -55,7 +55,6 @@ std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
 std::size_t constexpr color_function = 1; // 0: black_white, 1: hsl
 Color const default_color{100, 100, 100};
 int64_t constexpr text_scale = 2;
-int64_t const fallback_resolution_scale = 8;
 uint32_t const message_display_duration = 4000; // ms
 
 // Global variables
@@ -282,13 +281,12 @@ private:
 };
 
 struct Chunk {
-    static Chunk create(Complex position, double complex_size, int64_t max_iterations_local, int64_t resolution_scale)
+    static Chunk create(Complex position, double complex_size, int64_t max_iterations_local)
     {
         return Chunk{
             position,
             complex_size,
             max_iterations_local,
-            resolution_scale,
         };
     };
 
@@ -307,10 +305,6 @@ struct Chunk {
             compute_avx2_double();
         } else {
             compute_double();
-        }
-
-        if (m_resolution_scale != 0) {
-            scale();
         }
 
         switch (color_function) {
@@ -357,13 +351,11 @@ private:
     std::array<Color, chunk_size * chunk_size> m_buffer;
     std::size_t m_last_access_time{0};
     int64_t m_max_iterations_local{0};
-    int64_t m_resolution_scale{1};
 
-    Chunk(Complex position, double complex_size, int64_t max_iterations_local, int64_t resolution_scale)
+    Chunk(Complex position, double complex_size, int64_t max_iterations_local)
         : m_position{position}
         , m_complex_size{complex_size}
         , m_max_iterations_local{max_iterations_local}
-        , m_resolution_scale{resolution_scale}
     { }
 
     Chunk()
@@ -375,10 +367,10 @@ private:
     void compute_double()
     {
         Complex c = m_position;
-        double const pixel_delta = (m_complex_size / chunk_size) * m_resolution_scale;
+        double const pixel_delta = m_complex_size / chunk_size;
 
-        for (int64_t buffer_position = 0; buffer_position < static_cast<int64_t>(m_buffer.size()) / (m_resolution_scale * m_resolution_scale); ++buffer_position) {
-            if (buffer_position > 0 && (buffer_position * m_resolution_scale) % chunk_size == 0) {
+        for (int64_t buffer_position = 0; buffer_position < static_cast<int64_t>(m_buffer.size()); ++buffer_position) {
+            if (buffer_position > 0 && buffer_position % chunk_size == 0) {
                 c.real = m_position.real;
                 c.imag += pixel_delta;
             }
@@ -403,7 +395,7 @@ private:
 
     void compute_avx2_double()
     {
-        auto const pixel_delta_single = (m_complex_size / chunk_size) * m_resolution_scale;
+        auto const pixel_delta_single = m_complex_size / chunk_size;
 
         auto const pixel_delta_imag = _mm256_set_pd(
             pixel_delta_single,
@@ -442,8 +434,8 @@ private:
             m_buffer.fill(color_max_iterations);
         }
 
-        for (int64_t buffer_position = 0; buffer_position < static_cast<int64_t>(m_buffer.size()) / m_resolution_scale; buffer_position += 4) {
-            if (buffer_position > 0 && (buffer_position * m_resolution_scale) % chunk_size == 0) {
+        for (int64_t buffer_position = 0; buffer_position < static_cast<int64_t>(m_buffer.size()); buffer_position += 4) {
+            if (buffer_position > 0 && buffer_position % chunk_size == 0) {
                 c_real = c_real_start;
                 c_imag = _mm256_add_pd(c_imag, pixel_delta_imag);
             }
@@ -494,9 +486,9 @@ private:
         for (int32_t buffer_position = m_buffer.size() - 1; buffer_position > 0; --buffer_position) {
             auto target_x = buffer_position % chunk_size;
             auto target_y = buffer_position / chunk_size;
-            auto source_x = target_x / m_resolution_scale;
-            auto source_y = target_y / m_resolution_scale;
-            auto source_buffer_position = source_x + source_y * (chunk_size / m_resolution_scale);
+            auto source_x = target_x;
+            auto source_y = target_y;
+            auto source_buffer_position = source_x + source_y * chunk_size;
             m_buffer[buffer_position] = m_buffer[source_buffer_position];
         }
     }
@@ -705,7 +697,6 @@ private:
         double chunk_resolution;
         ChunkGridPosition chunk_grid_position;
         int64_t max_iterations;
-        int64_t resolution_scale;
 
         bool operator==(ChunkIdentifier const& other) const = default;
     };
@@ -716,8 +707,7 @@ private:
             return ((std::hash<double>()(id.chunk_resolution)
                         ^ (std::hash<ChunkGridPosition>()(id.chunk_grid_position) << 1))
                        >> 1)
-                ^ (std::hash<int64_t>()(id.max_iterations) << 1)
-                ^ std::hash<int64_t>()(id.resolution_scale);
+                ^ (std::hash<int64_t>()(id.max_iterations) << 1);
         }
     };
 
@@ -737,34 +727,17 @@ private:
 
     Chunk* get_or_create_chunk(double chunk_resolution, ChunkGridPosition position)
     {
-        auto preferred_chunk_identifier = ChunkIdentifier{
+        auto chunk_identifier = ChunkIdentifier{
             .chunk_resolution = chunk_resolution,
             .chunk_grid_position = position,
             .max_iterations = max_iterations,
-            .resolution_scale = 1,
         };
 
-        auto fallback_chunk_identifier = ChunkIdentifier{
-            .chunk_resolution = chunk_resolution,
-            .chunk_grid_position = position,
-            .max_iterations = max_iterations,
-            .resolution_scale = fallback_resolution_scale,
-        };
-
-        if (m_chunks.contains(preferred_chunk_identifier) && m_chunks.at(preferred_chunk_identifier).is_ready()) {
-            return &m_chunks.at(preferred_chunk_identifier);
+        if (m_chunks.contains(chunk_identifier) && m_chunks.at(chunk_identifier).is_ready()) {
+            return &m_chunks.at(chunk_identifier);
         }
 
-        if (m_chunks.contains(fallback_chunk_identifier) && m_chunks.at(fallback_chunk_identifier).is_ready()) {
-            enqueue_chunk(preferred_chunk_identifier);
-            return &m_chunks.at(fallback_chunk_identifier);
-        }
-
-        if (fallback_resolution_scale == 1) {
-            enqueue_chunk(preferred_chunk_identifier);
-        } else {
-            enqueue_chunk(fallback_chunk_identifier);
-        }
+        enqueue_chunk(chunk_identifier);
         return nullptr;
     };
 
@@ -783,7 +756,7 @@ private:
             .imag = identifier.chunk_grid_position.imag * identifier.chunk_resolution,
         };
 
-        m_chunks.insert(std::make_pair(identifier, Chunk::create(complex_chunk_position, identifier.chunk_resolution, identifier.max_iterations, identifier.resolution_scale)));
+        m_chunks.insert(std::make_pair(identifier, Chunk::create(complex_chunk_position, identifier.chunk_resolution, identifier.max_iterations)));
 
         auto& new_chunk = m_chunks.at(identifier);
         {
