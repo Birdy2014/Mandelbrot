@@ -918,13 +918,13 @@ int main()
             info_text_visible = !info_text_visible;
             break;
         case Scancodes::PLUS:
-            ++max_iterations;
+            max_iterations += 50;
             break;
         case Scancodes::H:
             // TODO: Toggle help text
             break;
         case Scancodes::MINUS:
-            --max_iterations;
+            max_iterations -= 50;
             break;
         default:
             std::cout << "Scancode: " << std::to_string(static_cast<uint32_t>(scancode)) << "\n";
