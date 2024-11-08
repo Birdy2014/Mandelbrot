@@ -2,20 +2,12 @@
 
 #include <cstring>
 #include <iostream>
-
 #include <sys/mman.h>
-#include <syscall.h>
-#include <unistd.h>
 
-void handler_registry_global(
-    void* data,
-    struct wl_registry* registry,
-    uint32_t name,
-    char const* interface,
-    uint32_t version)
+void handler_registry_global(void* data, wl_registry* registry, uint32_t name, char const* interface, [[maybe_unused]] uint32_t version)
 {
     auto* window = static_cast<Window*>(data);
-    printf("interface: '%s', version: %u, name: %u\n", interface, version, name);
+    // printf("interface: '%s', version: %u, name: %u\n", interface, version, name);
 
     if (std::strcmp(interface, "wl_compositor") == 0) {
         window->compositor = static_cast<wl_compositor*>(wl_registry_bind(registry, name, &wl_compositor_interface, 4));
@@ -30,10 +22,7 @@ void handler_registry_global(
     }
 }
 
-void handler_registry_global_remove(
-    void* data,
-    struct wl_registry* registry,
-    uint32_t name)
+void handler_registry_global_remove(void*, wl_registry*, uint32_t name)
 {
     printf("removed: %u\n", name);
 }
@@ -43,17 +32,16 @@ auto registry_listener = wl_registry_listener{
     .global_remove = handler_registry_global_remove,
 };
 
-void handler_xdg_wm_base_ping([[maybe_unused]] void* data, struct xdg_wm_base* wm_base, uint32_t serial)
+void handler_xdg_wm_base_ping(void*, xdg_wm_base* wm_base, uint32_t serial)
 {
     xdg_wm_base_pong(wm_base, serial);
-    std::cout << "ping-pong\n";
 }
 
 auto const base_listener = xdg_wm_base_listener{
     .ping = handler_xdg_wm_base_ping,
 };
 
-void handler_xdg_surface_configure(void* data, struct xdg_surface* surface, uint32_t serial)
+void handler_xdg_surface_configure(void* data, xdg_surface* surface, uint32_t serial)
 {
     auto* window = static_cast<Window*>(data);
 
@@ -66,10 +54,9 @@ auto const surface_listener = xdg_surface_listener{
     .configure = handler_xdg_surface_configure,
 };
 
-void handler_xdg_toplevel_configure(void* data, [[maybe_unused]] struct xdg_toplevel* toplevel, int32_t width, int32_t height, [[maybe_unused]] struct wl_array* states)
+void handler_xdg_toplevel_configure(void* data, xdg_toplevel*, int32_t width, int32_t height, wl_array*)
 {
     auto* window = static_cast<Window*>(data);
-    printf("configure: %dx%d\n", width, height);
 
     window->width = width;
     window->height = height;
@@ -90,7 +77,10 @@ void handler_xdg_toplevel_configure(void* data, [[maybe_unused]] struct xdg_topl
     window->mapped_data_size = stride * window->height;
 
     // Resize fd and remap data
-    ftruncate(window->fd, window->mapped_data_size);
+    if (ftruncate(window->fd, window->mapped_data_size) != 0) {
+        perror("ftruncate failed");
+        std::abort();
+    }
     window->mapped_data = static_cast<uint32_t*>(mmap(NULL, window->mapped_data_size, PROT_READ | PROT_WRITE, MAP_SHARED, window->fd, 0));
 
     // Recreate wl_buffer
@@ -104,28 +94,32 @@ void handler_xdg_toplevel_configure(void* data, [[maybe_unused]] struct xdg_topl
     }
 }
 
-void handler_xdg_toplevel_close([[maybe_unused]] void* data, [[maybe_unused]] struct xdg_toplevel* toplevel)
+void handler_xdg_toplevel_close(void* data, xdg_toplevel*)
 {
     auto* window = static_cast<Window*>(data);
     window->is_open = false;
-    printf("close\n");
 }
+
+void handler_xdg_toplevel_configure_bounds(void*, xdg_toplevel*, int, int) { }
+
+void handler_xdg_toplevel_wm_capabilities(void*, xdg_toplevel*, wl_array*) { }
 
 auto const toplevel_listener = xdg_toplevel_listener{
     .configure = handler_xdg_toplevel_configure,
     .close = handler_xdg_toplevel_close,
+    .configure_bounds = handler_xdg_toplevel_configure_bounds,
+    .wm_capabilities = handler_xdg_toplevel_wm_capabilities,
 };
 
-void handler_pointer_enter(void* data, struct wl_pointer* pointer, uint32_t serial, struct wl_surface*, wl_fixed_t x, wl_fixed_t y)
+void handler_pointer_enter(void* data, wl_pointer* pointer, uint32_t serial, wl_surface*, wl_fixed_t, wl_fixed_t)
 {
     auto* window = static_cast<Window*>(data);
-    std::cout << "Enter\n";
     wl_pointer_set_cursor(pointer, serial, window->cursor_surface, window->cursor_image->hotspot_x, window->cursor_image->hotspot_y);
 }
 
-void handler_pointer_leave(void*, struct wl_pointer*, uint32_t serial, struct wl_surface* surface) { }
+void handler_pointer_leave(void*, wl_pointer*, uint32_t, wl_surface*) { }
 
-void handler_pointer_motion(void* data, struct wl_pointer*, uint32_t time, wl_fixed_t x, wl_fixed_t y)
+void handler_pointer_motion(void* data, wl_pointer*, uint32_t, wl_fixed_t x, wl_fixed_t y)
 {
     auto* window = static_cast<Window*>(data);
     if (window->callback_pointer_motion) {
@@ -133,7 +127,7 @@ void handler_pointer_motion(void* data, struct wl_pointer*, uint32_t time, wl_fi
     }
 }
 
-void handler_pointer_button(void* data, struct wl_pointer*, uint32_t serial, uint32_t time, uint32_t button, uint32_t state)
+void handler_pointer_button(void* data, wl_pointer*, uint32_t, uint32_t, uint32_t button, uint32_t state)
 {
     auto* window = static_cast<Window*>(data);
     if (window->callback_pointer_button) {
@@ -141,7 +135,7 @@ void handler_pointer_button(void* data, struct wl_pointer*, uint32_t serial, uin
     }
 }
 
-void handler_pointer_axis(void* data, struct wl_pointer*, uint32_t time, uint32_t axis, wl_fixed_t value)
+void handler_pointer_axis(void* data, wl_pointer*, uint32_t, uint32_t axis, wl_fixed_t value)
 {
     auto* window = static_cast<Window*>(data);
     if (window->callback_pointer_axis) {
@@ -149,23 +143,32 @@ void handler_pointer_axis(void* data, struct wl_pointer*, uint32_t time, uint32_
     }
 }
 
+void handler_pointer_frame(void*, wl_pointer*) { }
+void handler_pointer_axis_source(void*, wl_pointer*, uint32_t) { }
+void handler_pointer_axis_stop(void*, wl_pointer*, uint32_t, uint32_t) { }
+void handler_pointer_axis_discrete(void*, wl_pointer*, uint32_t, int32_t) { }
+void handler_pointer_axis_value120(void*, wl_pointer*, uint32_t, int32_t) { }
+void handler_pointer_axis_relative_direction(void*, wl_pointer*, uint32_t, uint32_t) { }
+
 auto const pointer_listener = wl_pointer_listener{
     .enter = handler_pointer_enter,
     .leave = handler_pointer_leave,
     .motion = handler_pointer_motion,
     .button = handler_pointer_button,
     .axis = handler_pointer_axis,
+    .frame = handler_pointer_frame,
+    .axis_source = handler_pointer_axis_source,
+    .axis_stop = handler_pointer_axis_stop,
+    .axis_discrete = handler_pointer_axis_discrete,
+    .axis_value120 = handler_pointer_axis_value120,
+    .axis_relative_direction = handler_pointer_axis_relative_direction,
 };
 
-void handler_keyboard_enter(void* data, struct wl_keyboard*, uint32_t serial, struct wl_surface*, struct wl_array* keys)
-{
-}
+void handler_keyboard_enter(void*, wl_keyboard*, uint32_t, wl_surface*, wl_array*) { }
 
-void handler_keyboard_leave(void* data, struct wl_keyboard*, uint32_t serial, struct wl_surface*)
-{
-}
+void handler_keyboard_leave(void*, wl_keyboard*, uint32_t, wl_surface*) { }
 
-void handler_keyboard_key(void* data, struct wl_keyboard*, uint32_t serial, uint32_t time, uint32_t key, uint32_t state)
+void handler_keyboard_key(void* data, wl_keyboard*, uint32_t, uint32_t, uint32_t key, uint32_t state)
 {
     auto* window = static_cast<Window*>(data);
     if (window->callback_keyboard_key) {
@@ -173,17 +176,11 @@ void handler_keyboard_key(void* data, struct wl_keyboard*, uint32_t serial, uint
     }
 }
 
-void handler_keyboard_keymap(void* data, struct wl_keyboard*, uint32_t format, int fd, uint32_t size)
-{
-}
+void handler_keyboard_keymap(void*, wl_keyboard*, uint32_t, int, uint32_t) { }
 
-void handler_keyboard_modifiers(void* data, struct wl_keyboard*, uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched, uint32_t mods_locked, uint32_t group)
-{
-}
+void handler_keyboard_modifiers(void*, wl_keyboard*, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t) { }
 
-void handler_keyboard_repeat_info(void* data, struct wl_keyboard*, int32_t rate, int32_t delay)
-{
-}
+void handler_keyboard_repeat_info(void*, wl_keyboard*, int32_t, int32_t) { }
 
 auto const keyboard_listener = wl_keyboard_listener{
     .keymap = handler_keyboard_keymap,
@@ -194,7 +191,7 @@ auto const keyboard_listener = wl_keyboard_listener{
     .repeat_info = handler_keyboard_repeat_info,
 };
 
-void handler_surface_frame_done(void* data, wl_callback* cb, uint32_t time);
+void handler_surface_frame_done(void*, wl_callback*, uint32_t);
 
 auto const surface_frame_listener = wl_callback_listener{
     .done = handler_surface_frame_done,
@@ -239,23 +236,28 @@ std::unique_ptr<Window> Window::open(char const* title, int width, int height)
     // wait for the "initial" set of globals to appear
     wl_display_roundtrip(window->display);
 
-    // all our objects should be ready!
-    if (window->compositor)
-        std::cout << "Got compositor\n";
+    if (!window->compositor) {
+        std::cout << "Missing wl_compositor\n";
+        std::abort();
+    }
 
-    if (window->shm)
-        std::cout << "Got shm\n";
+    if (!window->shm) {
+        std::cout << "Missing wl_shm\n";
+        std::abort();
+    }
 
-    if (window->seat)
-        std::cout << "Got seat\n";
+    if (!window->seat) {
+        std::cout << "Missing wl_seat\n";
+        std::abort();
+    }
 
-    if (window->wm_base)
-        std::cout << "Got xdg_wm_base\n";
+    if (!window->wm_base) {
+        std::cout << "Missing xdg_wm_base\n";
+        std::abort();
+    }
 
-    if (window->compositor && window->shm && window->seat && window->wm_base) {
-        printf("Got them all!\n");
-    } else {
-        printf("Some required globals unavailable\n");
+    if (!window->zxdg_decoration_manager) {
+        std::cout << "Missing zxdg_decoration_manager_v1";
         std::abort();
     }
 
@@ -298,8 +300,6 @@ std::unique_ptr<Window> Window::open(char const* title, int width, int height)
 void Window::mainloop()
 {
     while (wl_display_dispatch(display) && !is_configured) { }
-
-    std::cout << "configured\n";
 
     handler_surface_frame_done(this, nullptr, 0);
 

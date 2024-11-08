@@ -919,7 +919,7 @@ int main()
 
     mandelbrot.create_thread_pool();
 
-    window->callback_draw = [](uint32_t* data, int width, int height, uint32_t time) {
+    window->callback_draw = [](uint32_t* data, [[maybe_unused]] int width, [[maybe_unused]] int height, uint32_t time) {
         global_time = time;
         mandelbrot.render(*buffer);
 

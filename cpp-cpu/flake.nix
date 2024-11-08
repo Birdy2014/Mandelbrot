@@ -18,6 +18,7 @@
           ASAN_OPTIONS = "symbolize=1";
           ASAN_SYMBOLIZER_PATH = "${pkgs.llvm}/bin/llvm-symbolizer";
           CMAKE_BUILD_TYPE = "Debug";
+          hardeningDisable = [ "fortify" ];
         };
     };
 }
