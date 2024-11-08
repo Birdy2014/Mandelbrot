@@ -20,6 +20,7 @@
 // TODO: Anti-Aliasing
 // TODO: Vulkan compute: https://bakedbits.dev/posts/vulkan-compute-example
 // TODO: wayland: use wp_cursor_shape_manager_v1 instead of wayland-cursor
+// FIXME: Sometimes chunks get stuck with the fallback color
 
 struct Color {
     union {
@@ -675,11 +676,15 @@ struct Mandelbrot {
                 chunks.push_back(ChunkCacheListItem{identifier, &chunk});
         }
         std::sort(std::begin(chunks), std::end(chunks), [](auto const& lhs, auto const& rhs) -> bool {
-            return (lhs.chunk->is_ready() && !rhs.chunk->is_ready()) || lhs.chunk->last_access_time() < rhs.chunk->last_access_time();
+            return lhs.chunk->last_access_time() < rhs.chunk->last_access_time();
         });
 
         for (std::size_t i = 0; i < chunk_amount_to_delete; ++i) {
             auto to_delete = chunks.at(i);
+            if (!to_delete.chunk->is_ready()) {
+                --i;
+                continue;
+            }
             m_chunks.erase(to_delete.identifier);
         }
     }
