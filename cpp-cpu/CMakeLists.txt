@@ -40,3 +40,5 @@ foreach(protocol "stable/xdg-shell/xdg-shell.xml" "unstable/xdg-decoration/xdg-d
   target_sources(Mandelbrot PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/generated/${protocol_filename}.c")
 endforeach()
 target_include_directories(Mandelbrot PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+install(TARGETS Mandelbrot)
