@@ -18,7 +18,7 @@ void handler_registry_global(void* data, wl_registry* registry, uint32_t name, c
     } else if (std::strcmp(interface, "xdg_wm_base") == 0) {
         window->wm_base = static_cast<xdg_wm_base*>(wl_registry_bind(registry, name, &xdg_wm_base_interface, 1));
     } else if (std::strcmp(interface, "zxdg_decoration_manager_v1") == 0) {
-        window->zxdg_decoration_manager = static_cast<zxdg_decoration_manager_v1*>(wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface, 1));
+        window->decoration_manager = static_cast<zxdg_decoration_manager_v1*>(wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface, 1));
     }
 }
 
@@ -206,7 +206,7 @@ void handler_surface_frame_done(void* data, wl_callback* cb, uint32_t time)
 
     /* Request another frame */
     auto* window = static_cast<Window*>(data);
-    cb = wl_surface_frame(window->surface);
+    cb = wl_surface_frame(window->wsurface);
     wl_callback_add_listener(cb, &surface_frame_listener, window);
 
     if (!window->callback_draw) {
@@ -215,9 +215,9 @@ void handler_surface_frame_done(void* data, wl_callback* cb, uint32_t time)
     window->callback_draw(window->mapped_data, window->width, window->height, time);
 
     /* Submit a frame for this event */
-    wl_surface_attach(window->surface, window->buffer, 0, 0);
-    wl_surface_damage_buffer(window->surface, 0, 0, INT32_MAX, INT32_MAX);
-    wl_surface_commit(window->surface);
+    wl_surface_attach(window->wsurface, window->buffer, 0, 0);
+    wl_surface_damage_buffer(window->wsurface, 0, 0, INT32_MAX, INT32_MAX);
+    wl_surface_commit(window->wsurface);
 
     window->last_frame = time;
 }
@@ -256,26 +256,26 @@ std::unique_ptr<Window> Window::open(char const* title, int width, int height)
         std::abort();
     }
 
-    if (!window->zxdg_decoration_manager) {
+    if (!window->decoration_manager) {
         std::cout << "Missing zxdg_decoration_manager_v1";
         std::abort();
     }
 
     xdg_wm_base_add_listener(window->wm_base, &base_listener, window.get());
 
-    window->surface = wl_compositor_create_surface(window->compositor);
+    window->wsurface = wl_compositor_create_surface(window->compositor);
 
-    window->xdg_surface = xdg_wm_base_get_xdg_surface(window->wm_base, window->surface);
-    xdg_surface_add_listener(window->xdg_surface, &surface_listener, window.get());
+    window->xsurface = xdg_wm_base_get_xdg_surface(window->wm_base, window->wsurface);
+    xdg_surface_add_listener(window->xsurface, &surface_listener, window.get());
 
-    window->xdg_toplevel = xdg_surface_get_toplevel(window->xdg_surface);
-    xdg_toplevel_set_title(window->xdg_toplevel, title);
-    xdg_toplevel_add_listener(window->xdg_toplevel, &toplevel_listener, window.get());
+    window->toplevel = xdg_surface_get_toplevel(window->xsurface);
+    xdg_toplevel_set_title(window->toplevel, title);
+    xdg_toplevel_add_listener(window->toplevel, &toplevel_listener, window.get());
 
-    auto* toplevel_decoration = zxdg_decoration_manager_v1_get_toplevel_decoration(window->zxdg_decoration_manager, window->xdg_toplevel);
+    auto* toplevel_decoration = zxdg_decoration_manager_v1_get_toplevel_decoration(window->decoration_manager, window->toplevel);
     zxdg_toplevel_decoration_v1_set_mode(toplevel_decoration, ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
 
-    wl_surface_commit(window->surface);
+    wl_surface_commit(window->wsurface);
 
     auto* pointer = wl_seat_get_pointer(window->seat);
     wl_pointer_add_listener(pointer, &pointer_listener, window.get());

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "xdg-decoration-unstable-v1.h"
-#include "xdg-shell.h"
 #include <functional>
 #include <linux/input-event-codes.h>
 #include <memory>
 #include <wayland-client.h>
 #include <wayland-cursor.h>
+#include <xdg-decoration-unstable-v1.h>
+#include <xdg-shell.h>
 
 enum class Scancodes {
     I = 23,
@@ -25,11 +25,11 @@ struct Window {
     xdg_wm_base* wm_base;
     wl_surface* cursor_surface;
     wl_cursor_image* cursor_image;
-    wl_surface* surface;
-    xdg_surface* xdg_surface;
-    xdg_toplevel* xdg_toplevel;
+    wl_surface* wsurface;
+    xdg_surface* xsurface;
+    xdg_toplevel* toplevel;
     wl_buffer* buffer;
-    zxdg_decoration_manager_v1* zxdg_decoration_manager;
+    zxdg_decoration_manager_v1* decoration_manager;
 
     int initial_width;
     int initial_height;

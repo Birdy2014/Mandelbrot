@@ -48,7 +48,7 @@ struct Color {
 // Parameters
 int64_t constexpr chunk_size = 32 * 8;
 int64_t max_iterations = 1000;
-bool constexpr use_avx2 = true;
+bool constexpr use_avx = true;
 int32_t constexpr thread_count = 8;
 int32_t constexpr max_queue_size = thread_count;
 std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
@@ -301,8 +301,8 @@ struct Chunk {
             return;
         }
 
-        if (use_avx2) {
-            compute_avx2_double();
+        if (use_avx) {
+            compute_avx_double();
         } else {
             compute_double();
         }
@@ -393,7 +393,7 @@ private:
         }
     }
 
-    void compute_avx2_double()
+    void compute_avx_double()
     {
         auto const pixel_delta_single = m_complex_size / chunk_size;
 
@@ -447,9 +447,8 @@ private:
 
             for (int32_t iteration = 0; iteration < m_max_iterations_local; ++iteration) {
                 auto abs = _mm256_add_pd(_mm256_mul_pd(z_real, z_real), _mm256_mul_pd(z_imag, z_imag));
-                auto comparison_mask = _mm256_cmp_pd(abs, const_4, _CMP_GE_OS);
-                if (!_mm256_testz_si256(comparison_mask, comparison_mask)) {
-                    int32_t done_count = 0;
+                auto comparison_mask = reinterpret_cast<__m256i>(_mm256_cmp_pd(abs, const_4, _CMP_GE_OS));
+                int32_t done_count = 0;
 
 #define CHECK_FIELD_64(N)                                                          \
     {                                                                              \
@@ -461,14 +460,13 @@ private:
             ++done_count;                                                          \
         }                                                                          \
     }
-                    CHECK_FIELD_64(0)
-                    CHECK_FIELD_64(1)
-                    CHECK_FIELD_64(2)
-                    CHECK_FIELD_64(3)
+                CHECK_FIELD_64(0)
+                CHECK_FIELD_64(1)
+                CHECK_FIELD_64(2)
+                CHECK_FIELD_64(3)
 
-                    if (done_count == 4) {
-                        break;
-                    }
+                if (done_count == 4) {
+                    break;
                 }
 
                 z_tmp_real = _mm256_add_pd(_mm256_sub_pd(_mm256_mul_pd(z_real, z_real), _mm256_mul_pd(z_imag, z_imag)), c_real);

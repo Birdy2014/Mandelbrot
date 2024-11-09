@@ -5,8 +5,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-set(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} CACHE STRING "Debug")
-
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -mavx -O0 -Wall -Wextra -fdiagnostics-color=always")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -mavx -O3")
 
@@ -21,7 +19,11 @@ target_link_libraries(Mandelbrot ${LIBRARY_wayland-cursor})
 find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 
 find_package(PkgConfig REQUIRED)
-pkg_get_variable(WAYLAND_PROTOCOLS wayland-protocols pkgdatadir REQUIRED)
+pkg_get_variable(WAYLAND_PROTOCOLS wayland-protocols pkgdatadir)
+
+if (WAYLAND_PROTOCOLS STREQUAL "")
+  message(FATAL_ERROR "wayland-protocols not found")
+endif()
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
 foreach(protocol "stable/xdg-shell/xdg-shell.xml" "unstable/xdg-decoration/xdg-decoration-unstable-v1.xml")
@@ -36,9 +38,9 @@ foreach(protocol "stable/xdg-shell/xdg-shell.xml" "unstable/xdg-decoration/xdg-d
     COMMAND ${WAYLAND_SCANNER} private-code < "${WAYLAND_PROTOCOLS}/${protocol}" > "${CMAKE_CURRENT_BINARY_DIR}/generated/${protocol_filename}.c"
     VERBATIM
   )
-  target_sources(Mandelbrot PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/generated/${protocol_filename}.h")
-  target_sources(Mandelbrot PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/generated/${protocol_filename}.c")
+  target_sources(Mandelbrot PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/${protocol_filename}.h")
+  target_sources(Mandelbrot PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/${protocol_filename}.c")
 endforeach()
-target_include_directories(Mandelbrot PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_include_directories(Mandelbrot SYSTEM PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
 install(TARGETS Mandelbrot)

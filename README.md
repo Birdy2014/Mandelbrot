@@ -25,6 +25,6 @@ Dependencies:
 
 ```bash
 cd cpp-cpu
-cmake -B build -G Ninja
+cmake -B build -G Ninja -D CMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
