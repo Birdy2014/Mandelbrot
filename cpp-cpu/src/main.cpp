@@ -36,7 +36,7 @@ struct Color {
         : b{b}
         , g{g}
         , r{r}
-        , a{0}
+        , a{255}
     { }
 
     bool operator==(Color const& other) const
@@ -85,30 +85,40 @@ struct QOIImage {
         fwrite(&header, 1, 14, out_file);
 
         uint8_t op_buffer[5];
+        Color prev_pixels[64];
+        for (auto& pixel : prev_pixels) {
+            pixel.color = 0;
+        }
+        Color last_pixel;
 
-        for (int pixel_index = 0; pixel_index < width * height;) {
-            int run_length = 0;
-            while (pixel_index + run_length < width * height
-                && run_length < 62
-                && data[pixel_index + run_length] == last_pixel(data, pixel_index + run_length)) {
+        int run_length = 0;
+        for (int pixel_index = 0; pixel_index < width * height; ++pixel_index) {
+            if (data[pixel_index] == last_pixel && run_length < 62 && pixel_index < width * height - 1) {
                 ++run_length;
+            } else {
+                if (run_length > 0) {
+                    // Generate QOI_OP_RUN
+                    op_buffer[0] = 192 | (run_length - 1);
+                    fwrite(&op_buffer, 1, 1, out_file);
+                    run_length = 0;
+                }
+
+                if (data[pixel_index] == prev_pixels[index_position(data[pixel_index])]) {
+                    // Generate QOI_OP_INDEX
+                    op_buffer[0] = index_position(data[pixel_index]);
+                    fwrite(&op_buffer, 1, 1, out_file);
+                } else {
+                    // Generate QOI_OP_RGB
+                    op_buffer[0] = 254;
+                    op_buffer[1] = data[pixel_index].r;
+                    op_buffer[2] = data[pixel_index].g;
+                    op_buffer[3] = data[pixel_index].b;
+                    fwrite(&op_buffer, 1, 4, out_file);
+                }
             }
 
-            if (run_length > 0) {
-                // Generate QOI_OP_RUN
-                op_buffer[0] = 192 | (run_length - 1);
-                fwrite(&op_buffer, 1, 1, out_file);
-                pixel_index += run_length;
-                continue;
-            }
-
-            // Generate QOI_OP_RGB
-            op_buffer[0] = 254;
-            op_buffer[1] = data[pixel_index].r;
-            op_buffer[2] = data[pixel_index].g;
-            op_buffer[3] = data[pixel_index].b;
-            fwrite(&op_buffer, 1, 4, out_file);
-            ++pixel_index;
+            last_pixel = data[pixel_index];
+            prev_pixels[index_position(data[pixel_index])] = data[pixel_index];
         }
 
         fclose(out_file);
@@ -125,12 +135,9 @@ private:
         uint8_t colorspace;
     };
 
-    static Color last_pixel(Color* data, int index)
+    static uint8_t index_position(Color color)
     {
-        if (index - 1 < 0) {
-            return Color{};
-        }
-        return data[index - 1];
+        return (color.r * 3 + color.g * 5 + color.b * 7 + color.a * 11) % 64;
     }
 };
 
