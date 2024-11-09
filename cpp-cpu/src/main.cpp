@@ -20,7 +20,6 @@
 // TODO: Anti-Aliasing
 // TODO: Vulkan compute: https://bakedbits.dev/posts/vulkan-compute-example
 // TODO: wayland: use wp_cursor_shape_manager_v1 instead of wayland-cursor
-// FIXME: Sometimes chunks get stuck with the fallback color
 
 struct Color {
     union {
@@ -689,14 +688,6 @@ struct Mandelbrot {
         }
     }
 
-    void flush_chunk_queue()
-    {
-        std::lock_guard<std::mutex> lock{m_queue_mutex};
-        while (!m_chunk_queue.empty()) {
-            m_chunk_queue.pop();
-        }
-    }
-
 private:
     struct ChunkIdentifier {
         double chunk_resolution;
@@ -876,8 +867,6 @@ int main()
 
         mandelbrot.top_left_global.x = new_cursor_position_global_screen_space.x - cursor_position_local_screen_space.x;
         mandelbrot.top_left_global.y = new_cursor_position_global_screen_space.y - cursor_position_local_screen_space.y;
-
-        mandelbrot.flush_chunk_queue();
     };
 
     window->callback_keyboard_key = [](Scancodes scancode, wl_keyboard_key_state state) {
