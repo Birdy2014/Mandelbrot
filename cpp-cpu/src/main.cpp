@@ -390,16 +390,17 @@ private:
             }
 
             Complex z = {0, 0};
-            Complex z_tmp = {0, 0};
+            Complex z2 = {0, 0};
 
             int32_t iteration = 0;
             for (; iteration < m_max_iterations_local; ++iteration) {
-                auto abs = z.real * z.real + z.imag * z.imag;
+                auto abs = z2.real + z2.imag;
                 if (abs >= 4)
                     break;
-                z_tmp.real = z.real * z.real - z.imag * z.imag + c.real;
-                z_tmp.imag = z.real * z.imag * 2 + c.imag;
-                z = z_tmp;
+                z.imag = 2 * z.real * z.imag + c.imag;
+                z.real = z2.real - z2.imag + c.real;
+                z2.real = z.real * z.real;
+                z2.imag = z.imag * z.imag;
             }
             m_buffer[buffer_position].color = iteration;
 
@@ -456,11 +457,11 @@ private:
 
             auto z_real = const_0;
             auto z_imag = const_0;
-            auto z_tmp_real = const_0;
-            auto z_tmp_imag = const_0;
+            auto z_real2 = const_0;
+            auto z_imag2 = const_0;
 
             for (int32_t iteration = 0; iteration < m_max_iterations_local; ++iteration) {
-                auto abs = _mm256_add_pd(_mm256_mul_pd(z_real, z_real), _mm256_mul_pd(z_imag, z_imag));
+                auto abs = _mm256_add_pd(z_real2, z_imag2);
                 auto comparison_mask = reinterpret_cast<__m256i>(_mm256_cmp_pd(abs, const_4, _CMP_GE_OS));
                 int32_t done_count = 0;
 
@@ -483,10 +484,11 @@ private:
                     break;
                 }
 
-                z_tmp_real = _mm256_add_pd(_mm256_sub_pd(_mm256_mul_pd(z_real, z_real), _mm256_mul_pd(z_imag, z_imag)), c_real);
-                z_tmp_imag = _mm256_add_pd(_mm256_mul_pd(_mm256_mul_pd(z_real, z_imag), const_2), c_imag);
-                z_real = z_tmp_real;
-                z_imag = z_tmp_imag;
+                z_imag = _mm256_add_pd(_mm256_mul_pd(const_2, _mm256_mul_pd(z_real, z_imag)), c_imag);
+                z_real = _mm256_add_pd(_mm256_sub_pd(z_real2, z_imag2), c_real);
+
+                z_real2 = _mm256_mul_pd(z_real, z_real);
+                z_imag2 = _mm256_mul_pd(z_imag, z_imag);
             }
 
             c_real = _mm256_add_pd(c_real, pixel_delta_real);
