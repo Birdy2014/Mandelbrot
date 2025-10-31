@@ -9,11 +9,13 @@
 #include <xdg-shell.h>
 
 enum class Scancodes {
+    Q = 16,
     I = 23,
     PLUS = 27,
     S = 31,
     H = 35,
     MINUS = 53,
+    C = 46,
 };
 
 struct Window {

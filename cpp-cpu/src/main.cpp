@@ -52,7 +52,8 @@ bool constexpr use_avx = true;
 int32_t constexpr thread_count = 8;
 int32_t constexpr max_queue_size = thread_count;
 std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
-std::size_t constexpr color_function = 1; // 0: black_white, 1: hsl
+std::size_t color_function_amount = 2;
+std::size_t color_function = 1;
 Color const default_color{100, 100, 100};
 int64_t constexpr text_scale = 2;
 uint32_t const message_display_duration = 4000; // ms
@@ -632,6 +633,8 @@ struct Mandelbrot {
 
     void create_thread_pool()
     {
+        m_threads_running = true;
+
         for (int32_t i = 0; i < thread_count; ++i) {
             m_threads.emplace_back([&]() {
                 while (m_threads_running) {
@@ -691,6 +694,23 @@ struct Mandelbrot {
             }
             m_chunks.erase(to_delete.identifier);
         }
+    }
+
+    void clear_cache()
+    {
+        destroy_thread_pool();
+
+        {
+            std::lock_guard<std::mutex> lock{m_queue_mutex};
+
+            while (!m_chunk_queue.empty()) {
+                m_chunk_queue.pop();
+            }
+
+            m_chunks.clear();
+        }
+
+        create_thread_pool();
     }
 
 private:
@@ -874,7 +894,7 @@ int main()
         mandelbrot.top_left_global.y = new_cursor_position_global_screen_space.y - cursor_position_local_screen_space.y;
     };
 
-    window->callback_keyboard_key = [](Scancodes scancode, wl_keyboard_key_state state) {
+    window->callback_keyboard_key = [&window](Scancodes scancode, wl_keyboard_key_state state) {
         if (state != WL_KEYBOARD_KEY_STATE_PRESSED) {
             return;
         }
@@ -905,6 +925,13 @@ int main()
             break;
         case Scancodes::MINUS:
             max_iterations -= 50;
+            break;
+        case Scancodes::Q:
+            window->is_open = false;
+            break;
+        case Scancodes::C:
+            color_function = (color_function + 1) % color_function_amount;
+            mandelbrot.clear_cache();
             break;
         default:
             std::cout << "Scancode: " << std::to_string(static_cast<uint32_t>(scancode)) << "\n";
@@ -944,6 +971,7 @@ int main()
             render_next_line("S: Screenshot");
             render_next_line("+: Increase max iterations");
             render_next_line("-: Decrease max iterations");
+            render_next_line("C: Change colors");
             ++line;
         }
 
