@@ -48,7 +48,6 @@ struct Color {
 // Parameters
 int64_t constexpr chunk_size = 32 * 8;
 int64_t max_iterations = 1000;
-bool constexpr use_avx = true;
 int32_t constexpr thread_count = 8;
 int32_t constexpr max_queue_size = thread_count;
 std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
@@ -309,11 +308,11 @@ struct Chunk {
             return;
         }
 
-        if (use_avx) {
-            compute_avx_double();
-        } else {
-            compute_double();
-        }
+#ifdef __AVX__
+        compute_avx_double();
+#else
+        compute_double();
+#endif
 
         switch (color_function) {
         case 0:
