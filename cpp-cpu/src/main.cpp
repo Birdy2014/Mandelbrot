@@ -52,8 +52,8 @@ bool constexpr use_avx = true;
 int32_t constexpr thread_count = 8;
 int32_t constexpr max_queue_size = thread_count;
 std::size_t constexpr max_chunk_memory = 1024 * 1024 * 1024; // 1GiB
-std::size_t color_function_amount = 2;
-std::size_t color_function = 1;
+std::size_t color_function_amount = 4;
+std::size_t color_function = 3;
 Color const default_color{100, 100, 100};
 int64_t constexpr text_scale = 2;
 uint32_t const message_display_duration = 4000; // ms
@@ -322,6 +322,12 @@ struct Chunk {
         case 1:
             colorize_hsl();
             break;
+        case 2:
+            colorize_hsl_multicolor();
+            break;
+        case 3:
+            colorize_phong();
+            break;
         }
 
         m_ready = true;
@@ -530,6 +536,115 @@ private:
                 } /* wtf, clang-format? */
                                                 .to_rgb();
             }
+        }
+    }
+
+    void colorize_hsl_multicolor()
+    {
+        for (uint32_t buffer_position = 0; buffer_position < m_buffer.size(); ++buffer_position) {
+            auto const iterations = m_buffer[buffer_position].color;
+            auto const iterations_ratio = static_cast<double>(iterations) / static_cast<double>(m_max_iterations_local);
+            if (iterations == m_max_iterations_local) {
+                m_buffer[buffer_position] = Color{};
+            } else {
+                m_buffer[buffer_position] = HSLColor{
+                    .hue = static_cast<uint16_t>((iterations_ratio) * 360),
+                    .saturation = 50,
+                    .lightness = 50,
+                }
+                                                .to_rgb();
+            }
+        }
+    }
+
+    struct Vec3 {
+        float x;
+        float y;
+
+        // Positive in direction towards viewer
+        float z;
+
+        Vec3 operator-(Vec3 const& other) const
+        {
+            return Vec3{
+                .x = x - other.x,
+                .y = y - other.y,
+                .z = z - other.z,
+            };
+        };
+
+        float operator*(Vec3 const& other) const
+        {
+            return x * other.x + y * other.y + z * other.z;
+        };
+
+        [[nodiscard]] Vec3 normalize() const
+        {
+            auto length = sqrt(x * x + y * y + z * z);
+            return Vec3{
+                .x = x / length,
+                .y = y / length,
+                .z = z / length,
+            };
+        }
+    };
+
+    void colorize_phong()
+    {
+        // auto base_color = Color{255, 127, 80};
+        auto light_direction = Vec3{.x = 1.0f, .y = 1.0f, .z = 1.0f}.normalize();
+
+        for (uint32_t buffer_position = 0; buffer_position < m_buffer.size(); ++buffer_position) {
+            auto x = buffer_position % chunk_size;
+            auto y = buffer_position / chunk_size;
+
+            auto z = m_buffer[buffer_position].color;
+            auto z_right = x < chunk_size - 1 ? m_buffer[buffer_position + 1].color : std::lerp(m_buffer[buffer_position - 1].color, m_buffer[buffer_position].color, 1.5f);
+            auto z_below = y < chunk_size - 1 ? m_buffer[buffer_position + chunk_size].color : std::lerp(m_buffer[buffer_position - chunk_size].color, m_buffer[buffer_position].color, 1.5f);
+
+            // Calculate normal from the point, one to the right and one below
+            auto current = Vec3{
+                .x = static_cast<float>(x),
+                .y = static_cast<float>(y),
+                .z = static_cast<float>(z),
+            };
+
+            auto right = Vec3{
+                .x = static_cast<float>(x + 1),
+                .y = static_cast<float>(y),
+                .z = static_cast<float>(z_right),
+            };
+
+            auto below = Vec3{
+                .x = static_cast<float>(x),
+                .y = static_cast<float>(y + 1),
+                .z = static_cast<float>(z_below),
+            };
+
+            auto a = right - current;
+            auto b = below - current;
+
+            auto normal = Vec3{
+                .x = a.y * b.z - a.z * b.y,
+                .y = a.z * b.x - a.x * b.z,
+                .z = a.x * b.y - a.y * b.x,
+            }
+                              .normalize();
+
+            auto diffuse_factor = std::max(normal * light_direction, 0.0f);
+
+            auto base_color = HSLColor{
+                .hue = static_cast<uint16_t>((static_cast<float>(m_buffer[buffer_position].color) / m_max_iterations_local) * 360),
+                .saturation = 50,
+                .lightness = 50,
+            }
+                                  .to_rgb();
+
+            m_buffer[buffer_position] = Color{
+                static_cast<uint8_t>(base_color.r * diffuse_factor),
+                static_cast<uint8_t>(base_color.g * diffuse_factor),
+                static_cast<uint8_t>(base_color.b * diffuse_factor),
+            };
         }
     }
 };
