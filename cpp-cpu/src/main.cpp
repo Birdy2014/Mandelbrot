@@ -107,16 +107,38 @@ struct QOIImage {
                     // Generate QOI_OP_INDEX
                     op_buffer[0] = index_position(data[pixel_index]);
                     fwrite(&op_buffer, 1, 1, out_file);
-                } else {
-                    // Generate QOI_OP_RGB
-                    op_buffer[0] = 254;
-                    op_buffer[1] = data[pixel_index].r;
-                    op_buffer[2] = data[pixel_index].g;
-                    op_buffer[3] = data[pixel_index].b;
-                    fwrite(&op_buffer, 1, 4, out_file);
+                    goto loop_end;
                 }
+
+                auto dr = data[pixel_index].r - last_pixel.r;
+                auto dg = data[pixel_index].g - last_pixel.g;
+                auto db = data[pixel_index].b - last_pixel.b;
+                if (dr >= -2 && dr <= 1 && dg >= -2 && dg <= 1 && db >= -2 && db <= 1) {
+                    // Generate QOI_OP_DIFF
+                    op_buffer[0] = 64 | ((dr + 2) << 4) | ((dg + 2) << 2) | (db + 2);
+                    fwrite(&op_buffer, 1, 1, out_file);
+                    goto loop_end;
+                }
+
+                auto diff_dr_dg = dr - dg;
+                auto diff_db_dg = db - dg;
+                if (dg >= -32 && dg <= 31 && diff_dr_dg >= -8 && diff_dr_dg <= 7 && diff_db_dg >= -8 && diff_db_dg <= 7) {
+                    // Generate QOI_OP_LUMA
+                    op_buffer[0] = 128 | (dg + 32);
+                    op_buffer[1] = ((diff_dr_dg + 8) << 4) | (diff_db_dg + 8);
+                    fwrite(&op_buffer, 1, 2, out_file);
+                    goto loop_end;
+                }
+
+                // Generate QOI_OP_RGB
+                op_buffer[0] = 254;
+                op_buffer[1] = data[pixel_index].r;
+                op_buffer[2] = data[pixel_index].g;
+                op_buffer[3] = data[pixel_index].b;
+                fwrite(&op_buffer, 1, 4, out_file);
             }
 
+        loop_end:
             last_pixel = data[pixel_index];
             prev_pixels[index_position(data[pixel_index])] = data[pixel_index];
         }
